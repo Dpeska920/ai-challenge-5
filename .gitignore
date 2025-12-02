@@ -39,3 +39,8 @@ coverage/
 tmp/
 temp/
 *.tmp
+
+# Docker compose (local)
+docker-compose.yml
+docker-compose.*.yml
+Makefile
