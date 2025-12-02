@@ -1,0 +1,134 @@
+import { ObjectId } from 'mongodb';
+
+export interface UserLimits {
+  daily: number | null;    // null = unlimited
+  monthly: number | null;
+  total: number | null;
+}
+
+export interface UserUsage {
+  dailyUsed: number;
+  monthlyUsed: number;
+  totalUsed: number;
+  lastDailyReset: Date;
+  lastMonthlyReset: Date;
+}
+
+export interface User {
+  _id: ObjectId;
+  telegramId: number;
+  username?: string;
+  firstName?: string;
+  isActivated: boolean;
+  limits: UserLimits;
+  usage: UserUsage;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export function createNewUser(telegramId: number, username?: string, firstName?: string): Omit<User, '_id'> {
+  const now = new Date();
+  return {
+    telegramId,
+    username,
+    firstName,
+    isActivated: false,
+    limits: {
+      daily: null,
+      monthly: null,
+      total: null,
+    },
+    usage: {
+      dailyUsed: 0,
+      monthlyUsed: 0,
+      totalUsed: 0,
+      lastDailyReset: now,
+      lastMonthlyReset: now,
+    },
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+export function activateUser(user: User, limits: UserLimits): User {
+  return {
+    ...user,
+    isActivated: true,
+    limits,
+    updatedAt: new Date(),
+  };
+}
+
+export function incrementUsage(user: User): User {
+  return {
+    ...user,
+    usage: {
+      ...user.usage,
+      dailyUsed: user.usage.dailyUsed + 1,
+      monthlyUsed: user.usage.monthlyUsed + 1,
+      totalUsed: user.usage.totalUsed + 1,
+    },
+    updatedAt: new Date(),
+  };
+}
+
+export function resetDailyUsage(user: User): User {
+  return {
+    ...user,
+    usage: {
+      ...user.usage,
+      dailyUsed: 0,
+      lastDailyReset: new Date(),
+    },
+    updatedAt: new Date(),
+  };
+}
+
+export function resetMonthlyUsage(user: User): User {
+  return {
+    ...user,
+    usage: {
+      ...user.usage,
+      monthlyUsed: 0,
+      lastMonthlyReset: new Date(),
+    },
+    updatedAt: new Date(),
+  };
+}
+
+export interface LimitCheckResult {
+  allowed: boolean;
+  reason?: 'daily' | 'monthly' | 'total';
+  limit?: number;
+  used?: number;
+}
+
+export function checkLimits(user: User): LimitCheckResult {
+  const { limits, usage } = user;
+
+  if (limits.daily !== null && usage.dailyUsed >= limits.daily) {
+    return { allowed: false, reason: 'daily', limit: limits.daily, used: usage.dailyUsed };
+  }
+
+  if (limits.monthly !== null && usage.monthlyUsed >= limits.monthly) {
+    return { allowed: false, reason: 'monthly', limit: limits.monthly, used: usage.monthlyUsed };
+  }
+
+  if (limits.total !== null && usage.totalUsed >= limits.total) {
+    return { allowed: false, reason: 'total', limit: limits.total, used: usage.totalUsed };
+  }
+
+  return { allowed: true };
+}
+
+export function shouldResetDaily(user: User): boolean {
+  const now = new Date();
+  const lastReset = user.usage.lastDailyReset;
+  return now.toDateString() !== lastReset.toDateString();
+}
+
+export function shouldResetMonthly(user: User): boolean {
+  const now = new Date();
+  const lastReset = user.usage.lastMonthlyReset;
+  return now.getMonth() !== lastReset.getMonth() || now.getFullYear() !== lastReset.getFullYear();
+}

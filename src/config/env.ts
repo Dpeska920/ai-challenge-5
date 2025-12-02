@@ -1,0 +1,79 @@
+function getEnvOrThrow(key: string): string {
+  const value = process.env[key];
+  if (!value) {
+    throw new Error(`Missing required environment variable: ${key}`);
+  }
+  return value;
+}
+
+function getEnvOrDefault(key: string, defaultValue: string): string {
+  return process.env[key] || defaultValue;
+}
+
+function getEnvAsNumber(key: string, defaultValue: number): number {
+  const value = process.env[key];
+  if (!value) return defaultValue;
+  const parsed = parseFloat(value);
+  return isNaN(parsed) ? defaultValue : parsed;
+}
+
+function getEnvAsNumberOrNull(key: string): number | null {
+  const value = process.env[key];
+  if (!value) return null;
+  const parsed = parseInt(value, 10);
+  return isNaN(parsed) ? null : parsed;
+}
+
+export type ResponseFormat = 'text' | 'json_object' | { type: 'json_schema'; schema: object };
+
+function parseResponseFormat(value: string): ResponseFormat {
+  if (value === 'text' || value === 'json_object') {
+    return value;
+  }
+  try {
+    const parsed = JSON.parse(value);
+    if (parsed.type === 'json_schema' && parsed.schema) {
+      return parsed as ResponseFormat;
+    }
+  } catch {
+    // Ignore parsing errors
+  }
+  return 'text';
+}
+
+export const config = {
+  // Telegram
+  telegramBotToken: getEnvOrThrow('TELEGRAM_BOT_TOKEN'),
+
+  // MongoDB
+  mongodbUri: getEnvOrDefault('MONGODB_URI', 'mongodb://localhost:27017/telegram-ai-bot'),
+
+  // Activation
+  activationCode: getEnvOrThrow('ACTIVATION_CODE'),
+
+  // AI Provider
+  aiProvider: getEnvOrDefault('AI_PROVIDER', 'openai'),
+  openai: {
+    apiKey: getEnvOrThrow('OPENAI_API_KEY'),
+    baseUrl: getEnvOrDefault('OPENAI_BASE_URL', 'https://api.openai.com/v1'),
+    model: getEnvOrDefault('OPENAI_MODEL', 'gpt-4o-mini'),
+    temperature: getEnvAsNumber('OPENAI_TEMPERATURE', 0.7),
+    maxTokens: getEnvAsNumber('OPENAI_MAX_TOKENS', 2000),
+    responseFormat: parseResponseFormat(getEnvOrDefault('OPENAI_RESPONSE_FORMAT', 'text')),
+  },
+
+  // System prompt
+  systemPrompt: getEnvOrDefault('SYSTEM_PROMPT', 'You are a helpful assistant.'),
+
+  // Default limits
+  defaultLimits: {
+    daily: getEnvAsNumberOrNull('DEFAULT_DAILY_LIMIT'),
+    monthly: getEnvAsNumberOrNull('DEFAULT_MONTHLY_LIMIT'),
+    total: getEnvAsNumberOrNull('DEFAULT_TOTAL_LIMIT'),
+  },
+
+  // Conversation timeout
+  conversationTimeoutHours: getEnvAsNumber('CONVERSATION_TIMEOUT_HOURS', 24),
+};
+
+export type Config = typeof config;
