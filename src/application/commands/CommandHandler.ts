@@ -1,9 +1,10 @@
 import type { User } from '../../domain/entities/User';
+import type { SendMessageOptions } from '../handlers/MessageHandler';
 
 export interface CommandContext {
   user: User;
   telegramId: number;
-  sendMessage: (text: string) => Promise<void>;
+  sendMessage: (text: string, options?: SendMessageOptions) => Promise<void>;
   args: string[];
 }
 

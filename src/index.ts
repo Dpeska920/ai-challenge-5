@@ -13,6 +13,7 @@ import { commandRegistry } from './application/commands/CommandHandler';
 import { HelpCommand } from './application/commands/HelpCommand';
 import { ClearCommand } from './application/commands/ClearCommand';
 import { StatusCommand } from './application/commands/StatusCommand';
+import { FakeUserCommand } from './application/commands/FakeUserCommand';
 import { log } from './utils/logger';
 
 async function main(): Promise<void> {
@@ -53,6 +54,7 @@ async function main(): Promise<void> {
   commandRegistry.register(new HelpCommand());
   commandRegistry.register(new ClearCommand(conversationRepository));
   commandRegistry.register(new StatusCommand(limitService));
+  commandRegistry.register(new FakeUserCommand(aiProvider, limitService));
 
   // Initialize message handler
   const messageHandler = new MessageHandler(

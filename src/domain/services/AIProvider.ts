@@ -12,6 +12,15 @@ export interface AIProviderConfig {
   responseFormat?: ResponseFormat;
 }
 
+export interface SingleRequestOptions {
+  systemPrompt: string;
+  userMessage: string;
+  responseFormat?: ResponseFormat;
+  temperature?: number;
+  maxTokens?: number;
+}
+
 export interface AIProvider {
   chat(messages: Message[]): Promise<string>;
+  singleRequest(options: SingleRequestOptions): Promise<string>;
 }

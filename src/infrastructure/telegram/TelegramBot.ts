@@ -24,8 +24,8 @@ export class TelegramBot {
         username: ctx.from?.username,
         firstName: ctx.from?.first_name,
         text: message.text,
-        sendMessage: async (text: string) => {
-          await ctx.reply(text);
+        sendMessage: async (text: string, options?: { parseMode?: 'HTML' | 'MarkdownV2' }) => {
+          await ctx.reply(text, { parse_mode: options?.parseMode });
         },
       });
     });

@@ -8,12 +8,16 @@ import { commandRegistry } from '../commands/CommandHandler';
 import { LimitService } from '../../domain/services/LimitService';
 import { log } from '../../utils/logger';
 
+export interface SendMessageOptions {
+  parseMode?: 'HTML' | 'MarkdownV2';
+}
+
 export interface MessageContext {
   telegramId: number;
   username?: string;
   firstName?: string;
   text: string;
-  sendMessage: (text: string) => Promise<void>;
+  sendMessage: (text: string, options?: SendMessageOptions) => Promise<void>;
 }
 
 export class MessageHandler {
