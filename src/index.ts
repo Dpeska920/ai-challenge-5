@@ -2,8 +2,10 @@ import { config } from './config/env';
 import { connectToDatabase, disconnectFromDatabase, createIndexes } from './infrastructure/database/mongodb';
 import { MongoUserRepository } from './infrastructure/repositories/MongoUserRepository';
 import { MongoConversationRepository } from './infrastructure/repositories/MongoConversationRepository';
+import { MongoCommandHistoryRepository } from './infrastructure/repositories/MongoCommandHistoryRepository';
 import { OpenAIProvider } from './infrastructure/ai/OpenAIProvider';
 import { LimitService } from './domain/services/LimitService';
+import { CommandHistoryService } from './domain/services/CommandHistoryService';
 import { ActivateUserUseCase } from './application/usecases/ActivateUser';
 import { CheckLimitsUseCase } from './application/usecases/CheckLimits';
 import { SendAIMessageUseCase } from './application/usecases/SendAIMessage';
@@ -26,6 +28,7 @@ async function main(): Promise<void> {
   // Initialize repositories
   const userRepository = new MongoUserRepository();
   const conversationRepository = new MongoConversationRepository();
+  const commandHistoryRepository = new MongoCommandHistoryRepository();
 
   // Initialize AI provider
   const aiProvider = new OpenAIProvider({
@@ -40,6 +43,7 @@ async function main(): Promise<void> {
 
   // Initialize services
   const limitService = new LimitService(userRepository);
+  const commandHistoryService = new CommandHistoryService(commandHistoryRepository);
 
   // Initialize use cases
   const activateUserUseCase = new ActivateUserUseCase(userRepository);
@@ -54,7 +58,7 @@ async function main(): Promise<void> {
   commandRegistry.register(new HelpCommand());
   commandRegistry.register(new ClearCommand(conversationRepository));
   commandRegistry.register(new StatusCommand(limitService));
-  commandRegistry.register(new FakeUserCommand(aiProvider, limitService));
+  commandRegistry.register(new FakeUserCommand(aiProvider, limitService, commandHistoryService));
 
   // Initialize message handler
   const messageHandler = new MessageHandler(

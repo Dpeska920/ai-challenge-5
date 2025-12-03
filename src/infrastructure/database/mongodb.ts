@@ -1,6 +1,7 @@
 import { MongoClient, Db, Collection } from 'mongodb';
 import type { User } from '../../domain/entities/User';
 import type { Conversation } from '../../domain/entities/Conversation';
+import type { CommandHistory } from '../../domain/entities/CommandHistory';
 import { log } from '../../utils/logger';
 
 let client: MongoClient | null = null;
@@ -45,6 +46,10 @@ export function getConversationsCollection(): Collection<Conversation> {
   return getDatabase().collection<Conversation>('conversations');
 }
 
+export function getCommandHistoryCollection(): Collection<CommandHistory> {
+  return getDatabase().collection<CommandHistory>('command_history');
+}
+
 export async function createIndexes(): Promise<void> {
   log('info', 'Creating database indexes...');
 
@@ -54,6 +59,10 @@ export async function createIndexes(): Promise<void> {
   const conversationsCollection = getConversationsCollection();
   await conversationsCollection.createIndex({ telegramId: 1, isActive: 1 });
   await conversationsCollection.createIndex({ lastMessageAt: 1 });
+
+  const commandHistoryCollection = getCommandHistoryCollection();
+  await commandHistoryCollection.createIndex({ telegramId: 1 });
+  await commandHistoryCollection.createIndex({ createdAt: -1 });
 
   log('info', 'Database indexes created');
 }

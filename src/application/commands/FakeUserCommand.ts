@@ -1,6 +1,7 @@
 import type { Command, CommandContext } from './CommandHandler';
 import type { AIProvider } from '../../domain/services/AIProvider';
 import type { LimitService } from '../../domain/services/LimitService';
+import type { CommandHistoryService } from '../../domain/services/CommandHistoryService';
 import { log } from '../../utils/logger';
 
 function escapeHtml(text: string): string {
@@ -57,21 +58,23 @@ export class FakeUserCommand implements Command {
 
   constructor(
     private aiProvider: AIProvider,
-    private limitService: LimitService
+    private limitService: LimitService,
+    private commandHistoryService: CommandHistoryService
   ) {}
 
   async execute(ctx: CommandContext): Promise<void> {
     // 1. Check limits before making AI request
     const { user, checkResult } = await this.limitService.checkAndResetLimits(ctx.user);
 
+    // 2. Build context from args
+    const userContext = ctx.args.join(' ').trim();
+
     if (!checkResult.allowed) {
       const errorMessage = this.limitService.formatLimitError(checkResult);
       await ctx.sendMessage(errorMessage);
+      await this.commandHistoryService.log(ctx.telegramId, this.name, userContext, 'limit_exceeded');
       return;
     }
-
-    // 2. Build context from args
-    const userContext = ctx.args.join(' ').trim();
     const userMessage = userContext || 'Generate a fake user profile';
 
     try {
@@ -93,6 +96,7 @@ export class FakeUserCommand implements Command {
           error: parseError instanceof Error ? parseError.message : String(parseError),
         });
         await ctx.sendMessage('Error: AI returned invalid JSON. Please try again.');
+        await this.commandHistoryService.log(ctx.telegramId, this.name, userContext, 'error', 'Invalid JSON response');
         return;
       }
 
@@ -100,6 +104,7 @@ export class FakeUserCommand implements Command {
       if (!isValidFakeUserProfile(profileData)) {
         log('error', 'Invalid fakeuser profile structure', { profileData });
         await ctx.sendMessage('Error: AI returned invalid profile format. Please try again.');
+        await this.commandHistoryService.log(ctx.telegramId, this.name, userContext, 'error', 'Invalid profile format');
         return;
       }
 
@@ -110,12 +115,17 @@ export class FakeUserCommand implements Command {
 
       // 6. Increment usage counters
       await this.limitService.incrementAndSave(user);
+
+      // 7. Log successful command
+      await this.commandHistoryService.log(ctx.telegramId, this.name, userContext, 'success');
     } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
       log('error', 'FakeUserCommand execution error', {
-        error: error instanceof Error ? error.message : String(error),
+        error: errorMsg,
         telegramId: ctx.telegramId,
       });
       await ctx.sendMessage('Error generating fake user profile. Please try again later.');
+      await this.commandHistoryService.log(ctx.telegramId, this.name, userContext, 'error', errorMsg);
     }
   }
 }
