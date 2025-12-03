@@ -6,6 +6,7 @@ import { MongoCommandHistoryRepository } from './infrastructure/repositories/Mon
 import { OpenAIProvider } from './infrastructure/ai/OpenAIProvider';
 import { LimitService } from './domain/services/LimitService';
 import { CommandHistoryService } from './domain/services/CommandHistoryService';
+import { GameCreationService } from './domain/services/GameCreationService';
 import { ActivateUserUseCase } from './application/usecases/ActivateUser';
 import { CheckLimitsUseCase } from './application/usecases/CheckLimits';
 import { SendAIMessageUseCase } from './application/usecases/SendAIMessage';
@@ -16,6 +17,7 @@ import { HelpCommand } from './application/commands/HelpCommand';
 import { ClearCommand } from './application/commands/ClearCommand';
 import { StatusCommand } from './application/commands/StatusCommand';
 import { FakeUserCommand } from './application/commands/FakeUserCommand';
+import { GameCreationCommand } from './application/commands/GameCreationCommand';
 import { log } from './utils/logger';
 
 async function main(): Promise<void> {
@@ -44,6 +46,7 @@ async function main(): Promise<void> {
   // Initialize services
   const limitService = new LimitService(userRepository);
   const commandHistoryService = new CommandHistoryService(commandHistoryRepository);
+  const gameCreationService = new GameCreationService(conversationRepository, aiProvider, limitService);
 
   // Initialize use cases
   const activateUserUseCase = new ActivateUserUseCase(userRepository);
@@ -59,6 +62,7 @@ async function main(): Promise<void> {
   commandRegistry.register(new ClearCommand(conversationRepository));
   commandRegistry.register(new StatusCommand(limitService));
   commandRegistry.register(new FakeUserCommand(aiProvider, limitService, commandHistoryService));
+  commandRegistry.register(new GameCreationCommand(conversationRepository, limitService, commandHistoryService));
 
   // Initialize message handler
   const messageHandler = new MessageHandler(
@@ -67,7 +71,9 @@ async function main(): Promise<void> {
     activateUserUseCase,
     checkLimitsUseCase,
     sendAIMessageUseCase,
-    limitService
+    limitService,
+    gameCreationService,
+    conversationRepository
   );
 
   // Initialize and start bot

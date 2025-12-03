@@ -1,5 +1,7 @@
 import { ObjectId } from 'mongodb';
 
+export type ConversationType = 'chat' | 'gamecreation';
+
 export interface Message {
   role: 'system' | 'user' | 'assistant';
   content: string;
@@ -9,16 +11,18 @@ export interface Message {
 export interface Conversation {
   _id: ObjectId;
   telegramId: number;
+  type: ConversationType;
   messages: Message[];
   isActive: boolean;
   lastMessageAt: Date;
   createdAt: Date;
 }
 
-export function createNewConversation(telegramId: number): Omit<Conversation, '_id'> {
+export function createNewConversation(telegramId: number, type: ConversationType = 'chat'): Omit<Conversation, '_id'> {
   const now = new Date();
   return {
     telegramId,
+    type,
     messages: [],
     isActive: true,
     lastMessageAt: now,

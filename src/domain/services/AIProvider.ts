@@ -20,7 +20,14 @@ export interface SingleRequestOptions {
   maxTokens?: number;
 }
 
+export interface ChatOptions {
+  systemPrompt: string;
+  responseFormat?: ResponseFormat;
+  temperature?: number;
+}
+
 export interface AIProvider {
   chat(messages: Message[]): Promise<string>;
+  chatWithOptions(messages: Message[], options: ChatOptions): Promise<string>;
   singleRequest(options: SingleRequestOptions): Promise<string>;
 }

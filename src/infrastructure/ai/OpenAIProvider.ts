@@ -1,5 +1,5 @@
 import OpenAI from 'openai';
-import type { AIProvider, AIProviderConfig, SingleRequestOptions, ResponseFormat } from '../../domain/services/AIProvider';
+import type { AIProvider, AIProviderConfig, SingleRequestOptions, ChatOptions, ResponseFormat } from '../../domain/services/AIProvider';
 import type { Message } from '../../domain/entities/Conversation';
 import { log } from '../../utils/logger';
 
@@ -49,6 +49,45 @@ export class OpenAIProvider implements AIProvider {
     }
 
     log('debug', 'Received response from OpenAI', {
+      tokensUsed: response.usage?.total_tokens,
+    });
+
+    return content;
+  }
+
+  async chatWithOptions(messages: Message[], options: ChatOptions): Promise<string> {
+    const openaiMessages: OpenAI.ChatCompletionMessageParam[] = [
+      { role: 'system', content: options.systemPrompt },
+      ...messages.map((msg) => ({
+        role: msg.role as 'system' | 'user' | 'assistant',
+        content: msg.content,
+      })),
+    ];
+
+    log('debug', 'Sending chat request with options to OpenAI', {
+      model: this.config.model,
+      messageCount: openaiMessages.length,
+    });
+
+    const requestParams: OpenAI.ChatCompletionCreateParamsNonStreaming = {
+      model: this.config.model,
+      messages: openaiMessages,
+      temperature: options.temperature ?? this.config.temperature ?? 0.7,
+      max_tokens: this.config.maxTokens ?? 2000,
+    };
+
+    if (options.responseFormat) {
+      this.applyResponseFormat(requestParams, options.responseFormat);
+    }
+
+    const response = await this.client.chat.completions.create(requestParams);
+
+    const content = response.choices[0]?.message?.content;
+    if (!content) {
+      throw new Error('No response content from OpenAI');
+    }
+
+    log('debug', 'Received chat response from OpenAI', {
       tokensUsed: response.usage?.total_tokens,
     });
 

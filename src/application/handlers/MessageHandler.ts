@@ -1,11 +1,14 @@
 import type { UserRepository } from '../../domain/repositories/UserRepository';
+import type { ConversationRepository } from '../../domain/repositories/ConversationRepository';
 import type { Config } from '../../config/env';
 import { createNewUser } from '../../domain/entities/User';
+import { isConversationExpired, deactivateConversation } from '../../domain/entities/Conversation';
 import { ActivateUserUseCase } from '../usecases/ActivateUser';
 import { CheckLimitsUseCase } from '../usecases/CheckLimits';
 import { SendAIMessageUseCase } from '../usecases/SendAIMessage';
 import { commandRegistry } from '../commands/CommandHandler';
 import { LimitService } from '../../domain/services/LimitService';
+import type { GameCreationService } from '../../domain/services/GameCreationService';
 import { log } from '../../utils/logger';
 
 export interface SendMessageOptions {
@@ -25,6 +28,8 @@ export class MessageHandler {
   private checkLimitsUseCase: CheckLimitsUseCase;
   private sendAIMessageUseCase: SendAIMessageUseCase;
   private limitService: LimitService;
+  private gameCreationService: GameCreationService;
+  private conversationRepo: ConversationRepository;
 
   constructor(
     private userRepository: UserRepository,
@@ -32,12 +37,16 @@ export class MessageHandler {
     activateUserUseCase: ActivateUserUseCase,
     checkLimitsUseCase: CheckLimitsUseCase,
     sendAIMessageUseCase: SendAIMessageUseCase,
-    limitService: LimitService
+    limitService: LimitService,
+    gameCreationService: GameCreationService,
+    conversationRepo: ConversationRepository
   ) {
     this.activateUserUseCase = activateUserUseCase;
     this.checkLimitsUseCase = checkLimitsUseCase;
     this.sendAIMessageUseCase = sendAIMessageUseCase;
     this.limitService = limitService;
+    this.gameCreationService = gameCreationService;
+    this.conversationRepo = conversationRepo;
   }
 
   async handle(ctx: MessageContext): Promise<void> {
@@ -101,22 +110,48 @@ export class MessageHandler {
       return;
     }
 
-    // 5. Process AI message
-    try {
-      const result = await this.sendAIMessageUseCase.execute({
-        user,
-        telegramId,
-        message: text,
-        conversationTimeoutHours: this.config.conversationTimeoutHours,
-      });
+    // 5. Get active conversation to determine type
+    let conversation = await this.conversationRepo.findActiveByTelegramId(telegramId);
 
-      await sendMessage(result.response);
-    } catch (error) {
-      log('error', 'Error processing AI message', {
-        telegramId,
-        error: error instanceof Error ? error.message : String(error),
-      });
-      await sendMessage('Sorry, an error occurred while processing your message. Please try again later.');
+    // Check if conversation is expired
+    if (conversation && isConversationExpired(conversation, this.config.conversationTimeoutHours)) {
+      const deactivated = deactivateConversation(conversation);
+      await this.conversationRepo.update(deactivated);
+      conversation = null;
+      log('info', 'Conversation expired and deactivated', { telegramId });
+    }
+
+    // 6. Route based on conversation type
+    if (conversation?.type === 'gamecreation') {
+      // Handle gamecreation conversation
+      try {
+        const result = await this.gameCreationService.processMessage(user, conversation, text);
+        await sendMessage(result.response, result.parseMode ? { parseMode: result.parseMode } : undefined);
+      } catch (error) {
+        log('error', 'Error processing gamecreation message', {
+          telegramId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        await sendMessage('Произошла ошибка при обработке. Попробуйте позже.');
+      }
+    } else {
+      // Handle regular chat conversation
+      try {
+        const result = await this.sendAIMessageUseCase.execute({
+          user,
+          telegramId,
+          message: text,
+          conversationTimeoutHours: this.config.conversationTimeoutHours,
+        });
+
+        await sendMessage(result.response);
+      } catch (error) {
+        log('error', 'Error processing AI message', {
+          telegramId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        await sendMessage('Sorry, an error occurred while processing your message. Please try again later.');
+      }
     }
   }
 }
