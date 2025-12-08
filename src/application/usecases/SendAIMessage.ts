@@ -1,7 +1,7 @@
 import type { User } from '../../domain/entities/User';
 import type { Conversation } from '../../domain/entities/Conversation';
 import type { ConversationRepository } from '../../domain/repositories/ConversationRepository';
-import type { AIProvider } from '../../domain/services/AIProvider';
+import type { AIProvider, ChatOptions, ResponseFormat } from '../../domain/services/AIProvider';
 import { LimitService } from '../../domain/services/LimitService';
 import {
   createNewConversation,
@@ -10,6 +10,13 @@ import {
   isConversationExpired,
 } from '../../domain/entities/Conversation';
 import { log } from '../../utils/logger';
+
+export interface ChatDefaults {
+  systemPrompt: string;
+  temperature: number;
+  maxTokens: number;
+  responseFormat: ResponseFormat;
+}
 
 export interface SendAIMessageInput {
   user: User;
@@ -28,7 +35,8 @@ export class SendAIMessageUseCase {
   constructor(
     private conversationRepo: ConversationRepository,
     private aiProvider: AIProvider,
-    private limitService: LimitService
+    private limitService: LimitService,
+    private chatDefaults: ChatDefaults
   ) {}
 
   async execute(input: SendAIMessageInput): Promise<SendAIMessageOutput> {
@@ -55,9 +63,18 @@ export class SendAIMessageUseCase {
     // Add user message
     conversation = addMessage(conversation, 'user', message);
 
+    // Build chat options from user settings with fallback to defaults
+    const userSettings = user.chatSettings;
+    const chatOptions: ChatOptions = {
+      systemPrompt: userSettings?.systemPrompt ?? this.chatDefaults.systemPrompt,
+      temperature: userSettings?.temperature ?? this.chatDefaults.temperature,
+      maxTokens: userSettings?.maxTokens ?? this.chatDefaults.maxTokens,
+      responseFormat: userSettings?.responseFormat ?? this.chatDefaults.responseFormat,
+    };
+
     // Send to AI
     log('debug', 'Sending message to AI', { telegramId, messageLength: message.length });
-    const aiResponse = await this.aiProvider.chat(conversation.messages);
+    const aiResponse = await this.aiProvider.chatWithOptions(conversation.messages, chatOptions);
 
     // Add AI response
     conversation = addMessage(conversation, 'assistant', aiResponse);

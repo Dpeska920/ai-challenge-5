@@ -24,6 +24,7 @@ export interface ChatOptions {
   systemPrompt: string;
   responseFormat?: ResponseFormat;
   temperature?: number;
+  maxTokens?: number;
 }
 
 export interface AIProvider {

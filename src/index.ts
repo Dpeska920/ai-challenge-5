@@ -18,6 +18,10 @@ import { ClearCommand } from './application/commands/ClearCommand';
 import { StatusCommand } from './application/commands/StatusCommand';
 import { FakeUserCommand } from './application/commands/FakeUserCommand';
 import { GameCreationCommand } from './application/commands/GameCreationCommand';
+import { TemperatureCommand } from './application/commands/TemperatureCommand';
+import { SystemPromptCommand } from './application/commands/SystemPromptCommand';
+import { MaxTokensCommand } from './application/commands/MaxTokensCommand';
+import { ResponseFormatCommand } from './application/commands/ResponseFormatCommand';
 import { log } from './utils/logger';
 
 async function main(): Promise<void> {
@@ -54,7 +58,13 @@ async function main(): Promise<void> {
   const sendAIMessageUseCase = new SendAIMessageUseCase(
     conversationRepository,
     aiProvider,
-    limitService
+    limitService,
+    {
+      systemPrompt: config.systemPrompt,
+      temperature: config.openai.temperature,
+      maxTokens: config.openai.maxTokens,
+      responseFormat: config.openai.responseFormat,
+    }
   );
 
   // Register commands
@@ -63,6 +73,10 @@ async function main(): Promise<void> {
   commandRegistry.register(new StatusCommand(limitService));
   commandRegistry.register(new FakeUserCommand(aiProvider, limitService, commandHistoryService));
   commandRegistry.register(new GameCreationCommand(conversationRepository, limitService, commandHistoryService));
+  commandRegistry.register(new TemperatureCommand(userRepository));
+  commandRegistry.register(new SystemPromptCommand(userRepository));
+  commandRegistry.register(new MaxTokensCommand(userRepository));
+  commandRegistry.register(new ResponseFormatCommand(userRepository));
 
   // Initialize message handler
   const messageHandler = new MessageHandler(

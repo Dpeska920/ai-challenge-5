@@ -73,7 +73,7 @@ export class OpenAIProvider implements AIProvider {
       model: this.config.model,
       messages: openaiMessages,
       temperature: options.temperature ?? this.config.temperature ?? 0.7,
-      max_tokens: this.config.maxTokens ?? 2000,
+      max_tokens: options.maxTokens ?? this.config.maxTokens ?? 2000,
     };
 
     if (options.responseFormat) {

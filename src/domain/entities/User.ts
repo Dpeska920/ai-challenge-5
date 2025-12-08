@@ -14,6 +14,15 @@ export interface UserUsage {
   lastMonthlyReset: Date;
 }
 
+export type ChatResponseFormat = 'text' | 'json_object';
+
+export interface UserChatSettings {
+  temperature: number | null;      // null = use default from config
+  systemPrompt: string | null;     // null = use default from config
+  maxTokens: number | null;        // null = use default from config
+  responseFormat: ChatResponseFormat | null;  // null = use default from config
+}
+
 export interface User {
   _id: ObjectId;
   telegramId: number;
@@ -22,6 +31,7 @@ export interface User {
   isActivated: boolean;
   limits: UserLimits;
   usage: UserUsage;
+  chatSettings?: UserChatSettings;  // Optional for backwards compatibility with existing users
   createdAt: Date;
   updatedAt: Date;
 }
@@ -44,6 +54,12 @@ export function createNewUser(telegramId: number, username?: string, firstName?:
       totalUsed: 0,
       lastDailyReset: now,
       lastMonthlyReset: now,
+    },
+    chatSettings: {
+      temperature: null,
+      systemPrompt: null,
+      maxTokens: null,
+      responseFormat: null,
     },
     createdAt: now,
     updatedAt: now,
@@ -131,4 +147,25 @@ export function shouldResetMonthly(user: User): boolean {
   const now = new Date();
   const lastReset = user.usage.lastMonthlyReset;
   return now.getMonth() !== lastReset.getMonth() || now.getFullYear() !== lastReset.getFullYear();
+}
+
+export function getDefaultChatSettings(): UserChatSettings {
+  return {
+    temperature: null,
+    systemPrompt: null,
+    maxTokens: null,
+    responseFormat: null,
+  };
+}
+
+export function updateChatSettings(user: User, settings: Partial<UserChatSettings>): User {
+  const currentSettings = user.chatSettings ?? getDefaultChatSettings();
+  return {
+    ...user,
+    chatSettings: {
+      ...currentSettings,
+      ...settings,
+    },
+    updatedAt: new Date(),
+  };
 }
