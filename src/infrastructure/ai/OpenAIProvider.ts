@@ -1,5 +1,5 @@
 import OpenAI from 'openai';
-import type { AIProvider, AIProviderConfig, SingleRequestOptions, ChatOptions, ResponseFormat } from '../../domain/services/AIProvider';
+import type { AIProvider, AIProviderConfig, SingleRequestOptions, ChatOptions, ResponseFormat, AIResponse } from '../../domain/services/AIProvider';
 import type { Message } from '../../domain/entities/Conversation';
 import { log } from '../../utils/logger';
 
@@ -55,7 +55,9 @@ export class OpenAIProvider implements AIProvider {
     return content;
   }
 
-  async chatWithOptions(messages: Message[], options: ChatOptions): Promise<string> {
+  async chatWithOptions(messages: Message[], options: ChatOptions): Promise<AIResponse> {
+    const modelToUse = options.model ?? this.config.model;
+
     const openaiMessages: OpenAI.ChatCompletionMessageParam[] = [
       { role: 'system', content: options.systemPrompt },
       ...messages.map((msg) => ({
@@ -64,13 +66,13 @@ export class OpenAIProvider implements AIProvider {
       })),
     ];
 
-    log('debug', 'Sending chat request with options to OpenAI', {
-      model: this.config.model,
+    log('debug', 'Sending chat request with options', {
+      model: modelToUse,
       messageCount: openaiMessages.length,
     });
 
     const requestParams: OpenAI.ChatCompletionCreateParamsNonStreaming = {
-      model: this.config.model,
+      model: modelToUse,
       messages: openaiMessages,
       temperature: options.temperature ?? this.config.temperature ?? 0.7,
       max_tokens: options.maxTokens ?? this.config.maxTokens ?? 2000,
@@ -80,7 +82,10 @@ export class OpenAIProvider implements AIProvider {
       this.applyResponseFormat(requestParams, options.responseFormat);
     }
 
+    const startTime = performance.now();
     const response = await this.client.chat.completions.create(requestParams);
+    const endTime = performance.now();
+    const responseTimeMs = endTime - startTime;
 
     const content = response.choices[0]?.message?.content;
     if (!content) {
@@ -89,9 +94,18 @@ export class OpenAIProvider implements AIProvider {
 
     log('debug', 'Received chat response from OpenAI', {
       tokensUsed: response.usage?.total_tokens,
+      responseTimeMs,
     });
 
-    return content;
+    return {
+      content,
+      metadata: {
+        inputTokens: response.usage?.prompt_tokens,
+        outputTokens: response.usage?.completion_tokens,
+        totalTokens: response.usage?.total_tokens,
+        responseTimeMs,
+      },
+    };
   }
 
   async singleRequest(options: SingleRequestOptions): Promise<string> {

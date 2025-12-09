@@ -22,6 +22,7 @@ import { TemperatureCommand } from './application/commands/TemperatureCommand';
 import { SystemPromptCommand } from './application/commands/SystemPromptCommand';
 import { MaxTokensCommand } from './application/commands/MaxTokensCommand';
 import { ResponseFormatCommand } from './application/commands/ResponseFormatCommand';
+import { ModelCommand } from './application/commands/ModelCommand';
 import { log } from './utils/logger';
 
 async function main(): Promise<void> {
@@ -36,7 +37,7 @@ async function main(): Promise<void> {
   const conversationRepository = new MongoConversationRepository();
   const commandHistoryRepository = new MongoCommandHistoryRepository();
 
-  // Initialize AI provider
+  // Initialize default AI provider
   const aiProvider = new OpenAIProvider({
     apiKey: config.openai.apiKey,
     baseUrl: config.openai.baseUrl,
@@ -46,6 +47,25 @@ async function main(): Promise<void> {
     maxTokens: config.openai.maxTokens,
     responseFormat: config.openai.responseFormat,
   });
+
+  // Initialize OpenRouter provider (for dynamic model switching)
+  const openRouterProvider = config.openrouter.apiKey
+    ? new OpenAIProvider({
+        apiKey: config.openrouter.apiKey,
+        baseUrl: config.openrouter.baseUrl,
+        model: 'openai/gpt-4o-mini', // Default model, will be overridden by user settings
+        systemPrompt: config.systemPrompt,
+        temperature: config.openai.temperature,
+        maxTokens: config.openai.maxTokens,
+        responseFormat: config.openai.responseFormat,
+      })
+    : null;
+
+  if (openRouterProvider) {
+    log('info', 'OpenRouter provider initialized');
+  } else {
+    log('info', 'OpenRouter provider not configured (OPENROUTER_API_KEY not set)');
+  }
 
   // Initialize services
   const limitService = new LimitService(userRepository);
@@ -58,6 +78,7 @@ async function main(): Promise<void> {
   const sendAIMessageUseCase = new SendAIMessageUseCase(
     conversationRepository,
     aiProvider,
+    openRouterProvider,
     limitService,
     {
       systemPrompt: config.systemPrompt,
@@ -77,6 +98,7 @@ async function main(): Promise<void> {
   commandRegistry.register(new SystemPromptCommand(userRepository));
   commandRegistry.register(new MaxTokensCommand(userRepository));
   commandRegistry.register(new ResponseFormatCommand(userRepository));
+  commandRegistry.register(new ModelCommand(userRepository, openRouterProvider !== null));
 
   // Initialize message handler
   const messageHandler = new MessageHandler(

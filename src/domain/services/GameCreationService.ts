@@ -90,14 +90,14 @@ export class GameCreationService {
     // Parse JSON response
     let parsedResponse: GameCreationResponse;
     try {
-      const data = JSON.parse(aiResponse);
+      const data = JSON.parse(aiResponse.content);
       if (!isValidGameCreationResponse(data)) {
         throw new Error('Invalid response structure');
       }
       parsedResponse = data;
     } catch (error) {
       log('error', 'Failed to parse gamecreation response', {
-        response: aiResponse,
+        response: aiResponse.content,
         error: error instanceof Error ? error.message : String(error),
       });
       // Fallback - ask user to try again
@@ -110,7 +110,7 @@ export class GameCreationService {
     }
 
     // Add AI response to conversation
-    updatedConversation = addMessage(updatedConversation, 'assistant', aiResponse);
+    updatedConversation = addMessage(updatedConversation, 'assistant', aiResponse.content);
 
     // Increment usage
     const updatedUser = await this.limitService.incrementAndSave(user);

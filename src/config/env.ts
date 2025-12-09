@@ -51,7 +51,7 @@ export const config = {
   // Activation
   activationCode: getEnvOrThrow('ACTIVATION_CODE'),
 
-  // AI Provider
+  // AI Provider (default)
   aiProvider: getEnvOrDefault('AI_PROVIDER', 'openai'),
   openai: {
     apiKey: getEnvOrThrow('OPENAI_API_KEY'),
@@ -60,6 +60,12 @@ export const config = {
     temperature: getEnvAsNumber('OPENAI_TEMPERATURE', 0.7),
     maxTokens: getEnvAsNumber('OPENAI_MAX_TOKENS', 2000),
     responseFormat: parseResponseFormat(getEnvOrDefault('OPENAI_RESPONSE_FORMAT', 'text')),
+  },
+
+  // OpenRouter (for dynamic model switching)
+  openrouter: {
+    apiKey: process.env.OPENROUTER_API_KEY || null,
+    baseUrl: getEnvOrDefault('OPENROUTER_BASE_URL', 'https://openrouter.ai/api/v1'),
   },
 
   // System prompt

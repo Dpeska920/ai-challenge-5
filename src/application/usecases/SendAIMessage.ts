@@ -1,7 +1,7 @@
 import type { User } from '../../domain/entities/User';
 import type { Conversation } from '../../domain/entities/Conversation';
 import type { ConversationRepository } from '../../domain/repositories/ConversationRepository';
-import type { AIProvider, ChatOptions, ResponseFormat } from '../../domain/services/AIProvider';
+import type { AIProvider, ChatOptions, ResponseFormat, AIResponseMetadata } from '../../domain/services/AIProvider';
 import { LimitService } from '../../domain/services/LimitService';
 import {
   createNewConversation,
@@ -34,7 +34,8 @@ export interface SendAIMessageOutput {
 export class SendAIMessageUseCase {
   constructor(
     private conversationRepo: ConversationRepository,
-    private aiProvider: AIProvider,
+    private defaultProvider: AIProvider,
+    private openRouterProvider: AIProvider | null,
     private limitService: LimitService,
     private chatDefaults: ChatDefaults
   ) {}
@@ -65,19 +66,31 @@ export class SendAIMessageUseCase {
 
     // Build chat options from user settings with fallback to defaults
     const userSettings = user.chatSettings;
+    const customModel = userSettings?.model ?? null;
+
     const chatOptions: ChatOptions = {
       systemPrompt: userSettings?.systemPrompt ?? this.chatDefaults.systemPrompt,
       temperature: userSettings?.temperature ?? this.chatDefaults.temperature,
       maxTokens: userSettings?.maxTokens ?? this.chatDefaults.maxTokens,
       responseFormat: userSettings?.responseFormat ?? this.chatDefaults.responseFormat,
+      model: customModel ?? undefined,
     };
 
-    // Send to AI
-    log('debug', 'Sending message to AI', { telegramId, messageLength: message.length });
-    const aiResponse = await this.aiProvider.chatWithOptions(conversation.messages, chatOptions);
+    // Select provider: if custom model is set and OpenRouter is available, use it
+    const useOpenRouter = customModel !== null && this.openRouterProvider !== null;
+    const provider = useOpenRouter ? this.openRouterProvider! : this.defaultProvider;
 
-    // Add AI response
-    conversation = addMessage(conversation, 'assistant', aiResponse);
+    // Send to AI
+    log('debug', 'Sending message to AI', {
+      telegramId,
+      messageLength: message.length,
+      provider: useOpenRouter ? 'openrouter' : 'default',
+      model: customModel ?? 'default',
+    });
+    const aiResponse = await provider.chatWithOptions(conversation.messages, chatOptions);
+
+    // Add AI response (only content, not metadata)
+    conversation = addMessage(conversation, 'assistant', aiResponse.content);
 
     // Save conversation
     await this.conversationRepo.update(conversation);
@@ -90,10 +103,37 @@ export class SendAIMessageUseCase {
       totalUsed: updatedUser.usage.totalUsed,
     });
 
+    // Format response with stats
+    const responseWithStats = this.formatResponseWithStats(aiResponse.content, aiResponse.metadata);
+
     return {
-      response: aiResponse,
+      response: responseWithStats,
       user: updatedUser,
       conversation,
     };
+  }
+
+  private formatResponseWithStats(content: string, metadata: AIResponseMetadata): string {
+    const stats: string[] = [];
+
+    // Response time
+    const timeSeconds = (metadata.responseTimeMs / 1000).toFixed(2);
+    stats.push(`⏱ ${timeSeconds}s`);
+
+    // Tokens
+    if (metadata.inputTokens !== undefined) {
+      stats.push(`📥 ${metadata.inputTokens}`);
+    }
+    if (metadata.outputTokens !== undefined) {
+      stats.push(`📤 ${metadata.outputTokens}`);
+    }
+
+    // Speed (tokens per second)
+    if (metadata.outputTokens !== undefined && metadata.responseTimeMs > 0) {
+      const tokensPerSecond = (metadata.outputTokens / (metadata.responseTimeMs / 1000)).toFixed(1);
+      stats.push(`⚡ ${tokensPerSecond} t/s`);
+    }
+
+    return `${content}\n\n---\n${stats.join(' | ')}`;
   }
 }

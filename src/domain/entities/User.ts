@@ -21,6 +21,7 @@ export interface UserChatSettings {
   systemPrompt: string | null;     // null = use default from config
   maxTokens: number | null;        // null = use default from config
   responseFormat: ChatResponseFormat | null;  // null = use default from config
+  model: string | null;            // null = use default provider, otherwise use OpenRouter with this model
 }
 
 export interface User {
@@ -60,6 +61,7 @@ export function createNewUser(telegramId: number, username?: string, firstName?:
       systemPrompt: null,
       maxTokens: null,
       responseFormat: null,
+      model: null,
     },
     createdAt: now,
     updatedAt: now,
@@ -155,6 +157,7 @@ export function getDefaultChatSettings(): UserChatSettings {
     systemPrompt: null,
     maxTokens: null,
     responseFormat: null,
+    model: null,
   };
 }
 
