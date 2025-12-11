@@ -8,8 +8,11 @@ import {
   addMessage,
   deactivateConversation,
   isConversationExpired,
+  updateTokens,
+  estimateTokens,
 } from '../../domain/entities/Conversation';
 import { log } from '../../utils/logger';
+import { markdownToTelegramHtml } from '../../utils/markdownToHtml';
 
 export interface ChatDefaults {
   systemPrompt: string;
@@ -27,6 +30,7 @@ export interface SendAIMessageInput {
 
 export interface SendAIMessageOutput {
   response: string;
+  parseMode: 'HTML' | 'MarkdownV2' | undefined;
   user: User;
   conversation: Conversation;
 }
@@ -92,6 +96,11 @@ export class SendAIMessageUseCase {
     // Add AI response (only content, not metadata)
     conversation = addMessage(conversation, 'assistant', aiResponse.content);
 
+    // Update conversation tokens
+    const inputTokens = aiResponse.metadata.inputTokens ?? 0;
+    const outputTokens = aiResponse.metadata.outputTokens ?? 0;
+    conversation = updateTokens(conversation, inputTokens, outputTokens);
+
     // Save conversation
     await this.conversationRepo.update(conversation);
 
@@ -103,35 +112,58 @@ export class SendAIMessageUseCase {
       totalUsed: updatedUser.usage.totalUsed,
     });
 
+    // Estimate tokens for the last user message
+    const lastMessageTokens = estimateTokens(message);
+
     // Format response with stats
-    const responseWithStats = this.formatResponseWithStats(aiResponse.content, aiResponse.metadata);
+    const responseWithStats = this.formatResponseWithStats(
+      aiResponse.content,
+      aiResponse.metadata,
+      lastMessageTokens,
+      conversation.tokens
+    );
+
+    // Convert markdown to Telegram HTML
+    const htmlResponse = markdownToTelegramHtml(responseWithStats);
 
     return {
-      response: responseWithStats,
+      response: htmlResponse,
+      parseMode: 'HTML',
       user: updatedUser,
       conversation,
     };
   }
 
-  private formatResponseWithStats(content: string, metadata: AIResponseMetadata): string {
+  private formatResponseWithStats(
+    content: string,
+    metadata: AIResponseMetadata,
+    lastMessageTokens: number,
+    conversationTokens: { totalInputTokens: number; totalOutputTokens: number }
+  ): string {
     const stats: string[] = [];
+
+    // Input tokens: total packet / last message (e.g., "In: 302/+57")
+    if (metadata.inputTokens !== undefined) {
+      stats.push(`In: ${metadata.inputTokens}/+${lastMessageTokens}`);
+    }
+
+    // Output tokens
+    if (metadata.outputTokens !== undefined) {
+      stats.push(`Out: ${metadata.outputTokens}`);
+    }
+
+    // Total conversation tokens
+    const totalConversation = conversationTokens.totalInputTokens + conversationTokens.totalOutputTokens;
+    stats.push(`Σ: ${totalConversation}`);
 
     // Response time
     const timeSeconds = (metadata.responseTimeMs / 1000).toFixed(2);
-    stats.push(`⏱ ${timeSeconds}s`);
-
-    // Tokens
-    if (metadata.inputTokens !== undefined) {
-      stats.push(`📥 ${metadata.inputTokens}`);
-    }
-    if (metadata.outputTokens !== undefined) {
-      stats.push(`📤 ${metadata.outputTokens}`);
-    }
+    stats.push(`${timeSeconds}s`);
 
     // Speed (tokens per second)
     if (metadata.outputTokens !== undefined && metadata.responseTimeMs > 0) {
       const tokensPerSecond = (metadata.outputTokens / (metadata.responseTimeMs / 1000)).toFixed(1);
-      stats.push(`⚡ ${tokensPerSecond} t/s`);
+      stats.push(`${tokensPerSecond} t/s`);
     }
 
     return `${content}\n\n---\n${stats.join(' | ')}`;

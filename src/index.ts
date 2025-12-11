@@ -23,6 +23,7 @@ import { SystemPromptCommand } from './application/commands/SystemPromptCommand'
 import { MaxTokensCommand } from './application/commands/MaxTokensCommand';
 import { ResponseFormatCommand } from './application/commands/ResponseFormatCommand';
 import { ModelCommand } from './application/commands/ModelCommand';
+import { CompactCommand } from './application/commands/CompactCommand';
 import { log } from './utils/logger';
 
 async function main(): Promise<void> {
@@ -99,6 +100,7 @@ async function main(): Promise<void> {
   commandRegistry.register(new MaxTokensCommand(userRepository));
   commandRegistry.register(new ResponseFormatCommand(userRepository));
   commandRegistry.register(new ModelCommand(userRepository, openRouterProvider !== null));
+  commandRegistry.register(new CompactCommand(conversationRepository, aiProvider, limitService));
 
   // Initialize message handler
   const messageHandler = new MessageHandler(

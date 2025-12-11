@@ -144,7 +144,7 @@ export class MessageHandler {
           conversationTimeoutHours: this.config.conversationTimeoutHours,
         });
 
-        await sendMessage(result.response);
+        await sendMessage(result.response, result.parseMode ? { parseMode: result.parseMode } : undefined);
       } catch (error) {
         log('error', 'Error processing AI message', {
           telegramId,
