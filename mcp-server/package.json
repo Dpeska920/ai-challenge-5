@@ -1,0 +1,20 @@
+{
+  "name": "mcp-server",
+  "version": "1.0.0",
+  "description": "MCP Server for AI Bot statistics",
+  "type": "module",
+  "scripts": {
+    "start": "bun run src/index.ts",
+    "dev": "bun run --watch src/index.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.10.0",
+    "express": "^4.21.0",
+    "mongodb": "^6.3.0"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.0.0",
+    "@types/express": "^5.0.0",
+    "typescript": "^5.3.3"
+  }
+}

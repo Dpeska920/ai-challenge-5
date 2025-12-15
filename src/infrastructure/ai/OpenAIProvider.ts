@@ -1,7 +1,26 @@
 import OpenAI from 'openai';
-import type { AIProvider, AIProviderConfig, SingleRequestOptions, ChatOptions, ResponseFormat, AIResponse } from '../../domain/services/AIProvider';
+import type {
+  AIProvider,
+  AIProviderConfig,
+  SingleRequestOptions,
+  ChatOptions,
+  ResponseFormat,
+  AIResponse,
+  ChatOptionsWithTools,
+  AIResponseWithTools,
+  AIToolCall,
+} from '../../domain/services/AIProvider';
 import type { Message } from '../../domain/entities/Conversation';
 import { log } from '../../utils/logger';
+
+// Extended message type for tool calls
+interface MessageWithTools {
+  role: 'system' | 'user' | 'assistant' | 'tool';
+  content: string;
+  createdAt: Date;
+  toolCalls?: AIToolCall[];
+  toolCallId?: string;
+}
 
 export class OpenAIProvider implements AIProvider {
   private client: OpenAI;
@@ -142,6 +161,110 @@ export class OpenAIProvider implements AIProvider {
     });
 
     return content;
+  }
+
+  async chatWithTools(messages: Message[] | MessageWithTools[], options: ChatOptionsWithTools): Promise<AIResponseWithTools> {
+    const modelToUse = options.model ?? this.config.model;
+
+    const openaiMessages: OpenAI.ChatCompletionMessageParam[] = [
+      { role: 'system', content: options.systemPrompt },
+    ];
+
+    // Process messages, handling tool calls and tool results
+    for (const msg of messages) {
+      if (msg.role === 'tool' && 'toolCallId' in msg && msg.toolCallId) {
+        // Tool result message
+        openaiMessages.push({
+          role: 'tool',
+          content: msg.content,
+          tool_call_id: msg.toolCallId,
+        });
+      } else if (msg.role === 'assistant' && 'toolCalls' in msg && msg.toolCalls) {
+        // Assistant message with tool calls
+        openaiMessages.push({
+          role: 'assistant',
+          content: msg.content || null,
+          tool_calls: msg.toolCalls.map(tc => ({
+            id: tc.id,
+            type: 'function' as const,
+            function: {
+              name: tc.function.name,
+              arguments: tc.function.arguments,
+            },
+          })),
+        });
+      } else {
+        // Regular message
+        openaiMessages.push({
+          role: msg.role as 'system' | 'user' | 'assistant',
+          content: msg.content,
+        });
+      }
+    }
+
+    log('debug', 'Sending chat request with tools', {
+      model: modelToUse,
+      messageCount: openaiMessages.length,
+      toolsCount: options.tools?.length ?? 0,
+    });
+
+    const requestParams: OpenAI.ChatCompletionCreateParamsNonStreaming = {
+      model: modelToUse,
+      messages: openaiMessages,
+      temperature: options.temperature ?? this.config.temperature ?? 0.7,
+      max_tokens: options.maxTokens ?? this.config.maxTokens ?? 2000,
+    };
+
+    // Add tools if provided
+    if (options.tools && options.tools.length > 0) {
+      requestParams.tools = options.tools.map(tool => ({
+        type: 'function' as const,
+        function: {
+          name: tool.function.name,
+          description: tool.function.description,
+          parameters: tool.function.parameters,
+        },
+      }));
+    }
+
+    if (options.responseFormat) {
+      this.applyResponseFormat(requestParams, options.responseFormat);
+    }
+
+    const startTime = performance.now();
+    const response = await this.client.chat.completions.create(requestParams);
+    const endTime = performance.now();
+    const responseTimeMs = endTime - startTime;
+
+    const message = response.choices[0]?.message;
+
+    // Check for tool calls
+    const toolCalls: AIToolCall[] | null = message?.tool_calls?.map(tc => ({
+      id: tc.id,
+      type: 'function' as const,
+      function: {
+        name: tc.function.name,
+        arguments: tc.function.arguments,
+      },
+    })) ?? null;
+
+    log('debug', 'Received chat response with tools from OpenAI', {
+      tokensUsed: response.usage?.total_tokens,
+      responseTimeMs,
+      hasToolCalls: toolCalls !== null && toolCalls.length > 0,
+      toolCallsCount: toolCalls?.length ?? 0,
+    });
+
+    return {
+      content: message?.content ?? null,
+      toolCalls,
+      metadata: {
+        inputTokens: response.usage?.prompt_tokens,
+        outputTokens: response.usage?.completion_tokens,
+        totalTokens: response.usage?.total_tokens,
+        responseTimeMs,
+      },
+    };
   }
 
   private applyResponseFormat(

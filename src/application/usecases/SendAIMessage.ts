@@ -1,7 +1,7 @@
 import type { User } from '../../domain/entities/User';
 import type { Conversation } from '../../domain/entities/Conversation';
 import type { ConversationRepository } from '../../domain/repositories/ConversationRepository';
-import type { AIProvider, ChatOptions, ResponseFormat, AIResponseMetadata } from '../../domain/services/AIProvider';
+import type { AIProvider, ChatOptions, ResponseFormat, AIResponseMetadata, AITool } from '../../domain/services/AIProvider';
 import { LimitService } from '../../domain/services/LimitService';
 import {
   createNewConversation,
@@ -13,6 +13,7 @@ import {
 } from '../../domain/entities/Conversation';
 import { log } from '../../utils/logger';
 import { markdownToTelegramHtml } from '../../utils/markdownToHtml';
+import type { MCPClient } from '../../infrastructure/mcp/MCPClient';
 
 export interface ChatDefaults {
   systemPrompt: string;
@@ -41,7 +42,8 @@ export class SendAIMessageUseCase {
     private defaultProvider: AIProvider,
     private openRouterProvider: AIProvider | null,
     private limitService: LimitService,
-    private chatDefaults: ChatDefaults
+    private chatDefaults: ChatDefaults,
+    private mcpClient: MCPClient | null = null
   ) {}
 
   async execute(input: SendAIMessageInput): Promise<SendAIMessageOutput> {
@@ -84,14 +86,23 @@ export class SendAIMessageUseCase {
     const useOpenRouter = customModel !== null && this.openRouterProvider !== null;
     const provider = useOpenRouter ? this.openRouterProvider! : this.defaultProvider;
 
-    // Send to AI
+    // Send to AI (with MCP tools if available)
     log('debug', 'Sending message to AI', {
       telegramId,
       messageLength: message.length,
       provider: useOpenRouter ? 'openrouter' : 'default',
       model: customModel ?? 'default',
+      hasMcpClient: this.mcpClient !== null,
     });
-    const aiResponse = await provider.chatWithOptions(conversation.messages, chatOptions);
+
+    let aiResponse: { content: string; metadata: AIResponseMetadata };
+
+    // Check if we should use MCP tools
+    if (this.mcpClient && provider.chatWithTools) {
+      aiResponse = await this.executeWithMcpTools(conversation, chatOptions, provider);
+    } else {
+      aiResponse = await provider.chatWithOptions(conversation.messages, chatOptions);
+    }
 
     // Add AI response (only content, not metadata)
     conversation = addMessage(conversation, 'assistant', aiResponse.content);
@@ -131,6 +142,113 @@ export class SendAIMessageUseCase {
       parseMode: 'HTML',
       user: updatedUser,
       conversation,
+    };
+  }
+
+  private async executeWithMcpTools(
+    conversation: Conversation,
+    chatOptions: ChatOptions,
+    provider: AIProvider
+  ): Promise<{ content: string; metadata: AIResponseMetadata }> {
+    if (!this.mcpClient || !provider.chatWithTools) {
+      throw new Error('MCP client or chatWithTools not available');
+    }
+
+    // Get tools from MCP server
+    const mcpTools = await this.mcpClient.getTools();
+    const tools: AITool[] = this.mcpClient.convertToOpenAITools(mcpTools);
+
+    log('debug', 'Fetched MCP tools', { count: tools.length });
+
+    // First request with tools
+    let response = await provider.chatWithTools(conversation.messages, {
+      ...chatOptions,
+      tools,
+    });
+
+    let totalInputTokens = response.metadata.inputTokens ?? 0;
+    let totalOutputTokens = response.metadata.outputTokens ?? 0;
+    let totalResponseTimeMs = response.metadata.responseTimeMs;
+
+    // Handle tool calls (max 5 iterations to prevent infinite loops)
+    let iterations = 0;
+    const maxIterations = 5;
+
+    while (response.toolCalls && response.toolCalls.length > 0 && iterations < maxIterations) {
+      iterations++;
+      log('debug', 'Processing tool calls', {
+        iteration: iterations,
+        toolCallsCount: response.toolCalls.length,
+      });
+
+      // Execute each tool call
+      const toolResults: { toolCallId: string; result: string }[] = [];
+
+      for (const toolCall of response.toolCalls) {
+        try {
+          const args = JSON.parse(toolCall.function.arguments);
+          const result = await this.mcpClient.executeTool(toolCall.function.name, args);
+          toolResults.push({
+            toolCallId: toolCall.id,
+            result: typeof result === 'string' ? result : JSON.stringify(result),
+          });
+          log('debug', 'Tool executed successfully', {
+            tool: toolCall.function.name,
+            result,
+          });
+        } catch (error) {
+          toolResults.push({
+            toolCallId: toolCall.id,
+            result: `Error: ${error instanceof Error ? error.message : String(error)}`,
+          });
+          log('error', 'Tool execution failed', {
+            tool: toolCall.function.name,
+            error: String(error),
+          });
+        }
+      }
+
+      // Build messages with tool results (using any[] because Message type doesn't support tool role)
+      const messagesWithToolResults: unknown[] = [
+        ...conversation.messages,
+        {
+          role: 'assistant' as const,
+          content: response.content || '',
+          toolCalls: response.toolCalls,
+          createdAt: new Date(),
+        },
+        ...toolResults.map(tr => ({
+          role: 'tool' as const,
+          content: tr.result,
+          toolCallId: tr.toolCallId,
+          createdAt: new Date(),
+        })),
+      ];
+
+      // Continue conversation with tool results
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      response = await provider.chatWithTools(messagesWithToolResults as any, {
+        ...chatOptions,
+        tools,
+      });
+
+      totalInputTokens += response.metadata.inputTokens ?? 0;
+      totalOutputTokens += response.metadata.outputTokens ?? 0;
+      totalResponseTimeMs += response.metadata.responseTimeMs;
+    }
+
+    if (iterations >= maxIterations) {
+      log('warn', 'Max tool call iterations reached');
+    }
+
+    return {
+      content: response.content || 'No response from AI',
+      metadata: {
+        inputTokens: totalInputTokens,
+        outputTokens: totalOutputTokens,
+        totalTokens: totalInputTokens + totalOutputTokens,
+        responseTimeMs: totalResponseTimeMs,
+      },
     };
   }
 

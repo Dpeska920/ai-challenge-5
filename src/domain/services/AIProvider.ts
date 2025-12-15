@@ -40,8 +40,42 @@ export interface ChatOptions {
   model?: string;  // Override model for this request
 }
 
+// Tool calling types
+export interface AITool {
+  type: 'function';
+  function: {
+    name: string;
+    description: string;
+    parameters: {
+      type: 'object';
+      properties: Record<string, { type: string; description: string }>;
+      required: string[];
+    };
+  };
+}
+
+export interface AIToolCall {
+  id: string;
+  type: 'function';
+  function: {
+    name: string;
+    arguments: string;  // JSON string
+  };
+}
+
+export interface AIResponseWithTools {
+  content: string | null;
+  toolCalls: AIToolCall[] | null;
+  metadata: AIResponseMetadata;
+}
+
+export interface ChatOptionsWithTools extends ChatOptions {
+  tools?: AITool[];
+}
+
 export interface AIProvider {
   chat(messages: Message[]): Promise<string>;
   chatWithOptions(messages: Message[], options: ChatOptions): Promise<AIResponse>;
+  chatWithTools?(messages: Message[], options: ChatOptionsWithTools): Promise<AIResponseWithTools>;
   singleRequest(options: SingleRequestOptions): Promise<string>;
 }

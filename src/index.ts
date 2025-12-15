@@ -4,6 +4,7 @@ import { MongoUserRepository } from './infrastructure/repositories/MongoUserRepo
 import { MongoConversationRepository } from './infrastructure/repositories/MongoConversationRepository';
 import { MongoCommandHistoryRepository } from './infrastructure/repositories/MongoCommandHistoryRepository';
 import { OpenAIProvider } from './infrastructure/ai/OpenAIProvider';
+import { MCPClient } from './infrastructure/mcp/MCPClient';
 import { LimitService } from './domain/services/LimitService';
 import { CommandHistoryService } from './domain/services/CommandHistoryService';
 import { GameCreationService } from './domain/services/GameCreationService';
@@ -24,6 +25,7 @@ import { MaxTokensCommand } from './application/commands/MaxTokensCommand';
 import { ResponseFormatCommand } from './application/commands/ResponseFormatCommand';
 import { ModelCommand } from './application/commands/ModelCommand';
 import { CompactCommand } from './application/commands/CompactCommand';
+import { ToolsCommand } from './application/commands/ToolsCommand';
 import { log } from './utils/logger';
 
 async function main(): Promise<void> {
@@ -68,6 +70,22 @@ async function main(): Promise<void> {
     log('info', 'OpenRouter provider not configured (OPENROUTER_API_KEY not set)');
   }
 
+  // Initialize MCP client (optional)
+  const mcpClient = config.mcpServerUrl ? new MCPClient(config.mcpServerUrl) : null;
+
+  if (mcpClient) {
+    log('info', 'MCP client initialized', { url: config.mcpServerUrl });
+    // Check MCP server health
+    const isHealthy = await mcpClient.healthCheck();
+    if (isHealthy) {
+      log('info', 'MCP server is healthy');
+    } else {
+      log('warn', 'MCP server health check failed - tools will not be available');
+    }
+  } else {
+    log('info', 'MCP client not configured (MCP_SERVER_URL not set)');
+  }
+
   // Initialize services
   const limitService = new LimitService(userRepository);
   const commandHistoryService = new CommandHistoryService(commandHistoryRepository);
@@ -86,7 +104,8 @@ async function main(): Promise<void> {
       temperature: config.openai.temperature,
       maxTokens: config.openai.maxTokens,
       responseFormat: config.openai.responseFormat,
-    }
+    },
+    mcpClient
   );
 
   // Register commands
@@ -101,6 +120,7 @@ async function main(): Promise<void> {
   commandRegistry.register(new ResponseFormatCommand(userRepository));
   commandRegistry.register(new ModelCommand(userRepository, openRouterProvider !== null));
   commandRegistry.register(new CompactCommand(conversationRepository, aiProvider, limitService));
+  commandRegistry.register(new ToolsCommand(mcpClient));
 
   // Initialize message handler
   const messageHandler = new MessageHandler(

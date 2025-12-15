@@ -80,6 +80,9 @@ export const config = {
 
   // Conversation timeout
   conversationTimeoutHours: getEnvAsNumber('CONVERSATION_TIMEOUT_HOURS', 24),
+
+  // MCP Server
+  mcpServerUrl: process.env.MCP_SERVER_URL || null,
 };
 
 export type Config = typeof config;
