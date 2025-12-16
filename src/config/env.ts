@@ -81,8 +81,24 @@ export const config = {
   // Conversation timeout
   conversationTimeoutHours: getEnvAsNumber('CONVERSATION_TIMEOUT_HOURS', 24),
 
-  // MCP Server
-  mcpServerUrl: process.env.MCP_SERVER_URL || null,
+  // MCP Servers (format: name:url,name2:url2)
+  mcpServers: parseMcpServers(process.env.MCP_SERVERS),
 };
+
+function parseMcpServers(value: string | undefined): { name: string; url: string }[] {
+  if (!value) return [];
+
+  const servers: { name: string; url: string }[] = [];
+
+  for (const entry of value.split(',')) {
+    const [name, ...urlParts] = entry.trim().split(':');
+    if (name && urlParts.length > 0) {
+      const url = urlParts.join(':'); // Rejoin URL parts (contains :)
+      servers.push({ name, url });
+    }
+  }
+
+  return servers;
+}
 
 export type Config = typeof config;

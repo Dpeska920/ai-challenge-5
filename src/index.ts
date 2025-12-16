@@ -71,19 +71,21 @@ async function main(): Promise<void> {
   }
 
   // Initialize MCP client (optional)
-  const mcpClient = config.mcpServerUrl ? new MCPClient(config.mcpServerUrl) : null;
+  const mcpClient = config.mcpServers.length > 0 ? new MCPClient(config.mcpServers) : null;
 
   if (mcpClient) {
-    log('info', 'MCP client initialized', { url: config.mcpServerUrl });
-    // Check MCP server health
+    log('info', 'MCP client initialized', { servers: config.mcpServers.map(s => s.name) });
+    // Connect to all MCP servers
+    await mcpClient.connect();
+    // Check MCP health
     const isHealthy = await mcpClient.healthCheck();
     if (isHealthy) {
-      log('info', 'MCP server is healthy');
+      log('info', 'MCP servers connected', { status: mcpClient.getStatus() });
     } else {
-      log('warn', 'MCP server health check failed - tools will not be available');
+      log('warn', 'MCP servers health check failed - tools may not be available');
     }
   } else {
-    log('info', 'MCP client not configured (MCP_SERVER_URL not set)');
+    log('info', 'MCP client not configured (MCP_SERVERS not set)');
   }
 
   // Initialize services
@@ -143,6 +145,9 @@ async function main(): Promise<void> {
 
     try {
       await telegramBot.stop();
+      if (mcpClient) {
+        await mcpClient.disconnect();
+      }
       await disconnectFromDatabase();
       log('info', 'Shutdown complete');
       process.exit(0);

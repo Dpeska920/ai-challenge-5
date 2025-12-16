@@ -1,12 +1,6 @@
 import type { Command, CommandContext } from './CommandHandler';
 import type { MCPClient, MCPTool } from '../../infrastructure/mcp/MCPClient';
 
-interface ParsedTool {
-  serverName: string;
-  toolName: string;
-  description: string;
-}
-
 export class ToolsCommand implements Command {
   name = 'tools';
   description = 'Show available MCP tools';
@@ -27,16 +21,15 @@ export class ToolsCommand implements Command {
         return;
       }
 
-      // Parse and group tools by server
-      const parsedTools = tools.map(tool => this.parseTool(tool));
-      const groupedTools = this.groupByServer(parsedTools);
+      // Group tools by server
+      const groupedTools = this.groupByServer(tools);
 
       // Build message
       const sections: string[] = [];
 
       for (const [serverName, serverTools] of groupedTools) {
         const toolsList = serverTools
-          .map((tool, index) => `  ${index + 1}. <b>${this.escapeHtml(tool.toolName)}</b>\n      ${this.escapeHtml(tool.description)}`)
+          .map((tool, index) => `  ${index + 1}. <b>${this.escapeHtml(tool.name)}</b>\n      ${this.escapeHtml(tool.description)}`)
           .join('\n');
 
         sections.push(`<b>[${serverName}]</b>\n${toolsList}`);
@@ -50,27 +43,8 @@ export class ToolsCommand implements Command {
     }
   }
 
-  private parseTool(tool: MCPTool): ParsedTool {
-    // Tool name format: serverName__toolName
-    const [serverName, ...toolNameParts] = tool.name.split('__');
-    const toolName = toolNameParts.join('__') || serverName;
-
-    // Remove [serverName] prefix from description if present
-    let description = tool.description;
-    const prefixMatch = description.match(/^\[[\w-]+\]\s*/);
-    if (prefixMatch) {
-      description = description.slice(prefixMatch[0].length);
-    }
-
-    return {
-      serverName: toolNameParts.length > 0 ? serverName : 'unknown',
-      toolName,
-      description,
-    };
-  }
-
-  private groupByServer(tools: ParsedTool[]): Map<string, ParsedTool[]> {
-    const groups = new Map<string, ParsedTool[]>();
+  private groupByServer(tools: MCPTool[]): Map<string, MCPTool[]> {
+    const groups = new Map<string, MCPTool[]>();
 
     for (const tool of tools) {
       const existing = groups.get(tool.serverName) || [];
