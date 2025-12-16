@@ -1,8 +1,9 @@
 import express, { Request, Response } from 'express';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import { MongoClient, Db } from 'mongodb';
+import { MongoClient, Db, Filter, Document } from 'mongodb';
 import { randomUUID } from 'crypto';
+import { z } from 'zod';
 
 // MongoDB connection
 let db: Db | null = null;
@@ -22,35 +23,96 @@ async function connectToDatabase(): Promise<Db> {
 }
 
 // Tool implementations
-async function getUsersCount(): Promise<number> {
-  const database = await connectToDatabase();
-  return database.collection('users').countDocuments();
+interface UsersCountParams {
+  activated?: boolean;
+  registeredAfter?: string;
+  registeredBefore?: string;
 }
 
-async function getActivatedUsersCount(): Promise<number> {
+async function getUsersCount(params: UsersCountParams): Promise<number> {
   const database = await connectToDatabase();
-  return database.collection('users').countDocuments({ isActivated: true });
+  const filter: Filter<Document> = {};
+
+  if (params.activated !== undefined) {
+    filter.isActivated = params.activated;
+  }
+
+  if (params.registeredAfter || params.registeredBefore) {
+    filter.createdAt = {};
+    if (params.registeredAfter) {
+      filter.createdAt.$gte = new Date(params.registeredAfter);
+    }
+    if (params.registeredBefore) {
+      filter.createdAt.$lte = new Date(params.registeredBefore);
+    }
+  }
+
+  return database.collection('users').countDocuments(filter);
 }
 
-async function getTotalRequests(): Promise<number> {
+interface RequestsCountParams {
+  from?: string;
+  to?: string;
+}
+
+async function getRequestsCount(params: RequestsCountParams): Promise<number> {
   const database = await connectToDatabase();
-  const result = await database.collection('users').aggregate([
-    { $group: { _id: null, total: { $sum: '$usage.totalUsed' } } },
+
+  // If no date filters - return all-time total
+  if (!params.from && !params.to) {
+    const result = await database.collection('users').aggregate([
+      { $group: { _id: null, total: { $sum: '$usage.totalUsed' } } },
+    ]).toArray();
+    return result[0]?.total ?? 0;
+  }
+
+  // With date filters - count messages in conversations within period
+  const filter: Filter<Document> = {};
+
+  if (params.from || params.to) {
+    filter.createdAt = {};
+    if (params.from) {
+      filter.createdAt.$gte = new Date(params.from);
+    }
+    if (params.to) {
+      filter.createdAt.$lte = new Date(params.to);
+    }
+  }
+
+  const result = await database.collection('conversations').aggregate([
+    { $match: filter },
+    { $project: { messageCount: { $size: { $ifNull: ['$messages', []] } } } },
+    { $group: { _id: null, total: { $sum: '$messageCount' } } },
   ]).toArray();
+
   return result[0]?.total ?? 0;
 }
 
-async function getTodayRequests(): Promise<number> {
-  const database = await connectToDatabase();
-  const result = await database.collection('users').aggregate([
-    { $group: { _id: null, total: { $sum: '$usage.dailyUsed' } } },
-  ]).toArray();
-  return result[0]?.total ?? 0;
+interface ConversationsCountParams {
+  active?: boolean;
+  createdAfter?: string;
+  createdBefore?: string;
 }
 
-async function getActiveConversationsCount(): Promise<number> {
+async function getConversationsCount(params: ConversationsCountParams): Promise<number> {
   const database = await connectToDatabase();
-  return database.collection('conversations').countDocuments({ isActive: true });
+  const filter: Filter<Document> = {};
+
+  if (params.active !== undefined) {
+    filter.isActive = params.active;
+  }
+
+  if (params.createdAfter || params.createdBefore) {
+    filter.createdAt = {};
+    if (params.createdAfter) {
+      filter.createdAt.$gte = new Date(params.createdAfter);
+    }
+    if (params.createdBefore) {
+      filter.createdAt.$lte = new Date(params.createdBefore);
+    }
+  }
+
+  return database.collection('conversations').countDocuments(filter);
 }
 
 // Create MCP server instance
@@ -60,48 +122,52 @@ function createMcpServer(): McpServer {
     version: '1.0.0',
   });
 
-  // Register tools using new API
+  // getUsersCount - с фильтрами
   server.registerTool(
     'getUsersCount',
-    { description: 'Получить общее количество пользователей бота' },
-    async () => {
-      const count = await getUsersCount();
+    {
+      description: 'Получить количество пользователей бота с опциональными фильтрами',
+      inputSchema: {
+        activated: z.boolean().optional().describe('Фильтр по статусу активации (true/false)'),
+        registeredAfter: z.string().optional().describe('Зарегистрированы после даты (ISO формат, например 2024-01-01)'),
+        registeredBefore: z.string().optional().describe('Зарегистрированы до даты (ISO формат)'),
+      },
+    },
+    async (args) => {
+      const count = await getUsersCount(args);
       return { content: [{ type: 'text' as const, text: String(count) }] };
     }
   );
 
+  // getRequestsCount - по датам
   server.registerTool(
-    'getActivatedUsersCount',
-    { description: 'Получить количество активированных пользователей бота' },
-    async () => {
-      const count = await getActivatedUsersCount();
+    'getRequestsCount',
+    {
+      description: 'Получить количество запросов (сообщений) к боту. Без параметров возвращает общее количество за всё время.',
+      inputSchema: {
+        from: z.string().optional().describe('Начало периода (ISO формат, например 2024-12-15 или 2024-12-15T10:00:00)'),
+        to: z.string().optional().describe('Конец периода (ISO формат)'),
+      },
+    },
+    async (args) => {
+      const count = await getRequestsCount(args);
       return { content: [{ type: 'text' as const, text: String(count) }] };
     }
   );
 
+  // getConversationsCount - с фильтрами
   server.registerTool(
-    'getTotalRequests',
-    { description: 'Получить общее количество запросов к AI боту (сумма всех использований)' },
-    async () => {
-      const count = await getTotalRequests();
-      return { content: [{ type: 'text' as const, text: String(count) }] };
-    }
-  );
-
-  server.registerTool(
-    'getTodayRequests',
-    { description: 'Получить количество запросов к боту за сегодня' },
-    async () => {
-      const count = await getTodayRequests();
-      return { content: [{ type: 'text' as const, text: String(count) }] };
-    }
-  );
-
-  server.registerTool(
-    'getActiveConversationsCount',
-    { description: 'Получить количество активных диалогов' },
-    async () => {
-      const count = await getActiveConversationsCount();
+    'getConversationsCount',
+    {
+      description: 'Получить количество диалогов с опциональными фильтрами',
+      inputSchema: {
+        active: z.boolean().optional().describe('Фильтр по активности диалога (true - активные, false - завершённые)'),
+        createdAfter: z.string().optional().describe('Созданы после даты (ISO формат)'),
+        createdBefore: z.string().optional().describe('Созданы до даты (ISO формат)'),
+      },
+    },
+    async (args) => {
+      const count = await getConversationsCount(args);
       return { content: [{ type: 'text' as const, text: String(count) }] };
     }
   );

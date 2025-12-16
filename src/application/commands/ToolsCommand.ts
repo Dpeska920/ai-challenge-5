@@ -29,8 +29,12 @@ export class ToolsCommand implements Command {
 
       for (const [serverName, serverTools] of groupedTools) {
         const toolsList = serverTools
-          .map((tool, index) => `  ${index + 1}. <b>${this.escapeHtml(tool.name)}</b>\n      ${this.escapeHtml(tool.description)}`)
-          .join('\n');
+          .map((tool, index) => {
+            const params = this.formatParams(tool.inputSchema);
+            const paramsStr = params ? `\n      <i>Параметры:</i> ${params}` : '';
+            return `  ${index + 1}. <b>${this.escapeHtml(tool.name)}</b>\n      ${this.escapeHtml(tool.description)}${paramsStr}`;
+          })
+          .join('\n\n');
 
         sections.push(`<b>[${serverName}]</b>\n${toolsList}`);
       }
@@ -53,6 +57,31 @@ export class ToolsCommand implements Command {
     }
 
     return groups;
+  }
+
+  private formatParams(inputSchema: MCPTool['inputSchema']): string {
+    if (!inputSchema?.properties || Object.keys(inputSchema.properties).length === 0) {
+      return '';
+    }
+
+    const required = new Set(inputSchema.required || []);
+    const params: string[] = [];
+
+    for (const [name, schema] of Object.entries(inputSchema.properties)) {
+      const prop = schema as { type?: string; description?: string; enum?: string[] };
+      const isRequired = required.has(name);
+      const reqMark = isRequired ? '' : '?';
+
+      let typeStr = prop.type || 'any';
+      if (prop.enum) {
+        typeStr = prop.enum.map(v => `"${v}"`).join(' | ');
+      }
+
+      const desc = prop.description ? ` - ${prop.description}` : '';
+      params.push(`<code>${this.escapeHtml(name)}${reqMark}</code>: ${this.escapeHtml(typeStr)}${this.escapeHtml(desc)}`);
+    }
+
+    return '\n        ' + params.join('\n        ');
   }
 
   private escapeHtml(text: string): string {
