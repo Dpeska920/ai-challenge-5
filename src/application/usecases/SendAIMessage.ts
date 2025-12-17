@@ -14,6 +14,22 @@ import {
 import { log } from '../../utils/logger';
 import { markdownToTelegramHtml } from '../../utils/markdownToHtml';
 import type { MCPClient } from '../../infrastructure/mcp/MCPClient';
+import { config } from '../../config/env';
+
+// Get current date/time formatted in the configured timezone
+function getCurrentDateTimeForAI(timezone: string): string {
+  const now = new Date();
+  const formatter = new Intl.DateTimeFormat('ru-RU', {
+    timeZone: timezone,
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+  return formatter.format(now);
+}
 
 export interface ChatDefaults {
   systemPrompt: string;
@@ -74,8 +90,13 @@ export class SendAIMessageUseCase {
     const userSettings = user.chatSettings;
     const customModel = userSettings?.model ?? null;
 
+    // Add current time context to system prompt for time-aware tools (like scheduler)
+    const timezone = config.defaultTimezone;
+    const currentTimeContext = `\n\nТекущее время пользователя: ${getCurrentDateTimeForAI(timezone)} (${timezone}).`;
+    const baseSystemPrompt = userSettings?.systemPrompt ?? this.chatDefaults.systemPrompt;
+
     const chatOptions: ChatOptions = {
-      systemPrompt: userSettings?.systemPrompt ?? this.chatDefaults.systemPrompt,
+      systemPrompt: baseSystemPrompt + currentTimeContext,
       temperature: userSettings?.temperature ?? this.chatDefaults.temperature,
       maxTokens: userSettings?.maxTokens ?? this.chatDefaults.maxTokens,
       responseFormat: userSettings?.responseFormat ?? this.chatDefaults.responseFormat,
@@ -187,6 +208,12 @@ export class SendAIMessageUseCase {
       for (const toolCall of response.toolCalls) {
         try {
           const args = JSON.parse(toolCall.function.arguments);
+
+          // Auto-inject telegramId for scheduler tools (override whatever AI generated)
+          if (toolCall.function.name.startsWith('scheduler__')) {
+            args.telegramId = conversation.telegramId;
+          }
+
           const result = await this.mcpClient.executeTool(toolCall.function.name, args);
           toolResults.push({
             toolCallId: toolCall.id,

@@ -13,6 +13,7 @@ import { CheckLimitsUseCase } from './application/usecases/CheckLimits';
 import { SendAIMessageUseCase } from './application/usecases/SendAIMessage';
 import { MessageHandler } from './application/handlers/MessageHandler';
 import { TelegramBot } from './infrastructure/telegram/TelegramBot';
+import { InternalApiServer } from './infrastructure/api/InternalApiServer';
 import { commandRegistry } from './application/commands/CommandHandler';
 import { HelpCommand } from './application/commands/HelpCommand';
 import { ClearCommand } from './application/commands/ClearCommand';
@@ -139,11 +140,22 @@ async function main(): Promise<void> {
   // Initialize and start bot
   const telegramBot = new TelegramBot(config.telegramBotToken, messageHandler);
 
+  // Initialize internal API server (for scheduler notifications)
+  const internalApiServer = new InternalApiServer(
+    telegramBot.getBot(),
+    userRepository,
+    sendAIMessageUseCase,
+    config.conversationTimeoutHours,
+    config.defaultTimezone,
+    config.internalApiPort
+  );
+
   // Graceful shutdown
   const shutdown = async (signal: string): Promise<void> => {
     log('info', `Received ${signal}, shutting down gracefully...`);
 
     try {
+      internalApiServer.stop();
       await telegramBot.stop();
       if (mcpClient) {
         await mcpClient.disconnect();
@@ -161,6 +173,9 @@ async function main(): Promise<void> {
 
   process.on('SIGINT', () => shutdown('SIGINT'));
   process.on('SIGTERM', () => shutdown('SIGTERM'));
+
+  // Start internal API server
+  await internalApiServer.start();
 
   // Start the bot
   await telegramBot.start();

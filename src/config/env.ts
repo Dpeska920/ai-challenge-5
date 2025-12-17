@@ -83,6 +83,12 @@ export const config = {
 
   // MCP Servers (format: name:url,name2:url2)
   mcpServers: parseMcpServers(process.env.MCP_SERVERS),
+
+  // Internal API port (for scheduler notifications)
+  internalApiPort: getEnvAsNumber('INTERNAL_API_PORT', 3000),
+
+  // Default timezone for display
+  defaultTimezone: getEnvOrDefault('DEFAULT_TIMEZONE', 'Europe/Moscow'),
 };
 
 function parseMcpServers(value: string | undefined): { name: string; url: string }[] {
