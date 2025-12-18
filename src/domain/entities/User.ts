@@ -24,6 +24,11 @@ export interface UserChatSettings {
   model: string | null;            // null = use default provider, otherwise use OpenRouter with this model
 }
 
+export interface UserProfile {
+  location: string | null;         // User's location (city, region, etc)
+  timezone: string | null;         // User's timezone (e.g., Europe/Moscow)
+}
+
 export interface User {
   _id: ObjectId;
   telegramId: number;
@@ -33,6 +38,7 @@ export interface User {
   limits: UserLimits;
   usage: UserUsage;
   chatSettings?: UserChatSettings;  // Optional for backwards compatibility with existing users
+  profile?: UserProfile;            // Optional for backwards compatibility with existing users
   createdAt: Date;
   updatedAt: Date;
 }
@@ -62,6 +68,10 @@ export function createNewUser(telegramId: number, username?: string, firstName?:
       maxTokens: null,
       responseFormat: null,
       model: null,
+    },
+    profile: {
+      location: null,
+      timezone: null,
     },
     createdAt: now,
     updatedAt: now,
@@ -168,6 +178,25 @@ export function updateChatSettings(user: User, settings: Partial<UserChatSetting
     chatSettings: {
       ...currentSettings,
       ...settings,
+    },
+    updatedAt: new Date(),
+  };
+}
+
+export function getDefaultProfile(): UserProfile {
+  return {
+    location: null,
+    timezone: null,
+  };
+}
+
+export function updateProfile(user: User, profile: Partial<UserProfile>): User {
+  const currentProfile = user.profile ?? getDefaultProfile();
+  return {
+    ...user,
+    profile: {
+      ...currentProfile,
+      ...profile,
     },
     updatedAt: new Date(),
   };

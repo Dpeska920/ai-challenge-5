@@ -27,6 +27,8 @@ import { ResponseFormatCommand } from './application/commands/ResponseFormatComm
 import { ModelCommand } from './application/commands/ModelCommand';
 import { CompactCommand } from './application/commands/CompactCommand';
 import { ToolsCommand } from './application/commands/ToolsCommand';
+import { SetLocationCommand } from './application/commands/SetLocationCommand';
+import { SetTimezoneCommand } from './application/commands/SetTimezoneCommand';
 import { log } from './utils/logger';
 
 async function main(): Promise<void> {
@@ -124,6 +126,8 @@ async function main(): Promise<void> {
   commandRegistry.register(new ModelCommand(userRepository, openRouterProvider !== null));
   commandRegistry.register(new CompactCommand(conversationRepository, aiProvider, limitService));
   commandRegistry.register(new ToolsCommand(mcpClient));
+  commandRegistry.register(new SetLocationCommand(userRepository));
+  commandRegistry.register(new SetTimezoneCommand(userRepository));
 
   // Initialize message handler
   const messageHandler = new MessageHandler(

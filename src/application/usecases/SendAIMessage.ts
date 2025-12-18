@@ -88,15 +88,25 @@ export class SendAIMessageUseCase {
 
     // Build chat options from user settings with fallback to defaults
     const userSettings = user.chatSettings;
+    const userProfile = user.profile;
     const customModel = userSettings?.model ?? null;
 
-    // Add current time context to system prompt for time-aware tools (like scheduler)
-    const timezone = config.defaultTimezone;
-    const currentTimeContext = `\n\nТекущее время пользователя: ${getCurrentDateTimeForAI(timezone)} (${timezone}).`;
+    // Build context for system prompt
+    const timezone = userProfile?.timezone ?? config.defaultTimezone;
+    const location = userProfile?.location ?? null;
+
+    // Build user context parts
+    const contextParts: string[] = [];
+    contextParts.push(`Текущее время пользователя: ${getCurrentDateTimeForAI(timezone)} (${timezone})`);
+    if (location) {
+      contextParts.push(`Местоположение пользователя: ${location}`);
+    }
+
+    const userContext = '\n\n' + contextParts.join('\n');
     const baseSystemPrompt = userSettings?.systemPrompt ?? this.chatDefaults.systemPrompt;
 
     const chatOptions: ChatOptions = {
-      systemPrompt: baseSystemPrompt + currentTimeContext,
+      systemPrompt: baseSystemPrompt + userContext,
       temperature: userSettings?.temperature ?? this.chatDefaults.temperature,
       maxTokens: userSettings?.maxTokens ?? this.chatDefaults.maxTokens,
       responseFormat: userSettings?.responseFormat ?? this.chatDefaults.responseFormat,
