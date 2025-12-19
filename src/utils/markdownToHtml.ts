@@ -14,12 +14,19 @@ function escapeHtml(text: string): string {
 export function markdownToTelegramHtml(markdown: string): string {
   let result = markdown;
 
+  // Use unique markers that won't be affected by escaping or markdown processing
+  // No underscores (italic), asterisks (bold), tildes (strikethrough), or HTML special chars
+  const CODE_BLOCK_MARKER = '\u200BCBLK';
+  const CODE_BLOCK_END = 'KCBL\u200B';
+  const INLINE_CODE_MARKER = '\u200BICOD';
+  const INLINE_CODE_END = 'DOCI\u200B';
+
   // First, extract and preserve code blocks to avoid processing their content
   const codeBlocks: string[] = [];
   result = result.replace(/```(\w*)\n?([\s\S]*?)```/g, (_match, _lang, code) => {
     const index = codeBlocks.length;
     codeBlocks.push(`<pre>${escapeHtml(code.trim())}</pre>`);
-    return `\x00CODE_BLOCK_${index}\x00`;
+    return `${CODE_BLOCK_MARKER}${index}${CODE_BLOCK_END}`;
   });
 
   // Extract and preserve inline code
@@ -27,7 +34,7 @@ export function markdownToTelegramHtml(markdown: string): string {
   result = result.replace(/`([^`\n]+)`/g, (_match, code) => {
     const index = inlineCodes.length;
     inlineCodes.push(`<code>${escapeHtml(code)}</code>`);
-    return `\x00INLINE_CODE_${index}\x00`;
+    return `${INLINE_CODE_MARKER}${index}${INLINE_CODE_END}`;
   });
 
   // Now escape HTML in the remaining text
@@ -50,11 +57,11 @@ export function markdownToTelegramHtml(markdown: string): string {
 
   // Restore code blocks and inline code
   codeBlocks.forEach((block, index) => {
-    result = result.replace(`\x00CODE_BLOCK_${index}\x00`, block);
+    result = result.replace(`${CODE_BLOCK_MARKER}${index}${CODE_BLOCK_END}`, block);
   });
 
   inlineCodes.forEach((code, index) => {
-    result = result.replace(`\x00INLINE_CODE_${index}\x00`, code);
+    result = result.replace(`${INLINE_CODE_MARKER}${index}${INLINE_CODE_END}`, code);
   });
 
   return result;
