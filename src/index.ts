@@ -29,6 +29,11 @@ import { CompactCommand } from './application/commands/CompactCommand';
 import { ToolsCommand } from './application/commands/ToolsCommand';
 import { SetLocationCommand } from './application/commands/SetLocationCommand';
 import { SetTimezoneCommand } from './application/commands/SetTimezoneCommand';
+import { RagListCommand } from './application/commands/RagListCommand';
+import { RagAddCommand } from './application/commands/RagAddCommand';
+import { RagDelCommand } from './application/commands/RagDelCommand';
+import { RagIndexCommand } from './application/commands/RagIndexCommand';
+import { RagService } from './domain/services/RagService';
 import { log } from './utils/logger';
 
 async function main(): Promise<void> {
@@ -91,6 +96,17 @@ async function main(): Promise<void> {
     log('info', 'MCP client not configured (MCP_SERVERS not set)');
   }
 
+  // Initialize RAG service (optional) - early initialization for use in SendAIMessageUseCase
+  const ragService = config.ragApiUrl
+    ? new RagService({ apiUrl: config.ragApiUrl })
+    : null;
+
+  if (ragService) {
+    log('info', 'RAG service initialized', { apiUrl: config.ragApiUrl });
+  } else {
+    log('info', 'RAG service not configured (RAG_API_URL not set)');
+  }
+
   // Initialize services
   const limitService = new LimitService(userRepository);
   const commandHistoryService = new CommandHistoryService(commandHistoryRepository);
@@ -110,7 +126,8 @@ async function main(): Promise<void> {
       maxTokens: config.openai.maxTokens,
       responseFormat: config.openai.responseFormat,
     },
-    mcpClient
+    mcpClient,
+    ragService
   );
 
   // Register commands
@@ -129,6 +146,14 @@ async function main(): Promise<void> {
   commandRegistry.register(new SetLocationCommand(userRepository));
   commandRegistry.register(new SetTimezoneCommand(userRepository));
 
+  // Register RAG commands if service is available
+  if (ragService) {
+    commandRegistry.register(new RagListCommand(ragService));
+    commandRegistry.register(new RagAddCommand(ragService));
+    commandRegistry.register(new RagDelCommand(ragService));
+    commandRegistry.register(new RagIndexCommand(ragService));
+  }
+
   // Initialize message handler
   const messageHandler = new MessageHandler(
     userRepository,
@@ -143,6 +168,11 @@ async function main(): Promise<void> {
 
   // Initialize and start bot
   const telegramBot = new TelegramBot(config.telegramBotToken, messageHandler);
+
+  // Set RAG service for file upload handling
+  if (ragService) {
+    telegramBot.setRagService(ragService);
+  }
 
   // Initialize internal API server (for scheduler notifications)
   const internalApiServer = new InternalApiServer(

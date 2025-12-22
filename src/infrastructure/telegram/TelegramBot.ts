@@ -1,5 +1,7 @@
 import { Bot, Context } from 'grammy';
 import type { MessageHandler } from '../../application/handlers/MessageHandler';
+import type { RagService } from '../../domain/services/RagService';
+import { handleRagFileUpload } from '../../application/commands/RagAddCommand';
 import { log } from '../../utils/logger';
 
 const TELEGRAM_MAX_MESSAGE_LENGTH = 4096;
@@ -40,10 +42,15 @@ function splitMessage(text: string, maxLength: number = TELEGRAM_MAX_MESSAGE_LEN
 
 export class TelegramBot {
   private bot: Bot;
+  private ragService: RagService | null = null;
 
   constructor(token: string, private messageHandler: MessageHandler) {
     this.bot = new Bot(token);
     this.setupHandlers();
+  }
+
+  setRagService(ragService: RagService): void {
+    this.ragService = ragService;
   }
 
   private setupHandlers(): void {
@@ -67,6 +74,67 @@ export class TelegramBot {
           }
         },
       });
+    });
+
+    // Handle document uploads for RAG
+    this.bot.on('message:document', async (ctx: Context) => {
+      const message = ctx.message;
+      if (!message || !message.document) return;
+
+      const telegramId = ctx.from?.id;
+      if (!telegramId) return;
+
+      // Check if caption starts with /ragadd
+      const caption = message.caption?.trim() || '';
+      if (!caption.toLowerCase().startsWith('/ragadd')) {
+        return; // Not a RAG upload, ignore
+      }
+
+      if (!this.ragService) {
+        await ctx.reply('❌ RAG service is not configured.');
+        return;
+      }
+
+      const document = message.document;
+      const filename = document.file_name || 'document';
+
+      // Parse description from caption (everything after /ragadd)
+      const description = caption.replace(/^\/ragadd\s*/i, '').trim();
+
+      try {
+        // Download file from Telegram
+        const file = await ctx.api.getFile(document.file_id);
+        const fileUrl = `https://api.telegram.org/file/bot${this.bot.token}/${file.file_path}`;
+
+        const response = await fetch(fileUrl);
+        if (!response.ok) {
+          await ctx.reply('❌ Failed to download file from Telegram.');
+          return;
+        }
+
+        const buffer = Buffer.from(await response.arrayBuffer());
+
+        // Process file upload
+        await handleRagFileUpload(this.ragService, {
+          telegramId,
+          filename,
+          content: buffer,
+          description,
+          sendMessage: async (text: string, options?: { parseMode?: 'HTML' | 'MarkdownV2' }) => {
+            const parts = splitMessage(text);
+            for (const part of parts) {
+              await ctx.reply(part, { parse_mode: options?.parseMode });
+            }
+          },
+        });
+      } catch (error) {
+        log('error', 'Error processing RAG document', {
+          telegramId,
+          filename,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        await ctx.reply(`❌ Error processing file: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
     });
 
     // Handle errors

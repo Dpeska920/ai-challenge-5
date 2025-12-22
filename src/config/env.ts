@@ -89,6 +89,9 @@ export const config = {
 
   // Default timezone for display
   defaultTimezone: getEnvOrDefault('DEFAULT_TIMEZONE', 'Europe/Moscow'),
+
+  // RAG API URL (rag-mcp service)
+  ragApiUrl: process.env.RAG_API_URL || null,
 };
 
 function parseMcpServers(value: string | undefined): { name: string; url: string }[] {

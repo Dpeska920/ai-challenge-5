@@ -3,6 +3,7 @@ import type { Conversation } from '../../domain/entities/Conversation';
 import type { ConversationRepository } from '../../domain/repositories/ConversationRepository';
 import type { AIProvider, ChatOptions, ResponseFormat, AIResponseMetadata, AITool } from '../../domain/services/AIProvider';
 import { LimitService } from '../../domain/services/LimitService';
+import type { RagService } from '../../domain/services/RagService';
 import {
   createNewConversation,
   addMessage,
@@ -59,7 +60,8 @@ export class SendAIMessageUseCase {
     private openRouterProvider: AIProvider | null,
     private limitService: LimitService,
     private chatDefaults: ChatDefaults,
-    private mcpClient: MCPClient | null = null
+    private mcpClient: MCPClient | null = null,
+    private ragService: RagService | null = null
   ) {}
 
   async execute(input: SendAIMessageInput): Promise<SendAIMessageOutput> {
@@ -102,11 +104,34 @@ export class SendAIMessageUseCase {
       contextParts.push(`Местоположение пользователя: ${location}`);
     }
 
+    // Search RAG for relevant context (threshold 0.8 means distance < 0.8 is relevant)
+    let ragContext: string | null = null;
+    if (this.ragService) {
+      try {
+        const ragResults = await this.ragService.searchContext(message, 3, 0.8);
+        ragContext = this.ragService.formatContextForPrompt(ragResults);
+        if (ragContext) {
+          log('debug', 'RAG context found', {
+            telegramId,
+            resultsCount: ragResults.length,
+          });
+        }
+      } catch (error) {
+        log('warn', 'RAG search failed', {
+          telegramId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
     const userContext = '\n\n' + contextParts.join('\n');
     const baseSystemPrompt = userSettings?.systemPrompt ?? this.chatDefaults.systemPrompt;
 
+    // Add RAG context to system prompt if available
+    const ragContextSection = ragContext ? `\n\n${ragContext}` : '';
+
     const chatOptions: ChatOptions = {
-      systemPrompt: baseSystemPrompt + userContext,
+      systemPrompt: baseSystemPrompt + userContext + ragContextSection,
       temperature: userSettings?.temperature ?? this.chatDefaults.temperature,
       maxTokens: userSettings?.maxTokens ?? this.chatDefaults.maxTokens,
       responseFormat: userSettings?.responseFormat ?? this.chatDefaults.responseFormat,
