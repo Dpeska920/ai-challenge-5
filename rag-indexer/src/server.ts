@@ -5,7 +5,7 @@ import { randomUUID } from "crypto";
 import { z } from "zod";
 
 import { initEmbeddings } from "./embeddings";
-import { initVectorStore, openTable, search, searchWithThreshold, getStats, reindexWithRecords, isTableReady } from "./vectorStore";
+import { initVectorStore, openTable, searchWithThreshold, getStats, reindexWithRecords, isTableReady } from "./vectorStore";
 import {
   initDocumentManager,
   listDocuments,
@@ -56,56 +56,8 @@ function createMcpServer(): McpServer {
     version: "1.0.0",
   });
 
-  // Search documents
-  server.registerTool(
-    "searchDocuments",
-    {
-      description:
-        "Поиск по индексированным документам. Использует семантический поиск для нахождения релевантных фрагментов текста.",
-      inputSchema: {
-        query: z.string().describe("Поисковый запрос на естественном языке"),
-        limit: z
-          .number()
-          .min(1)
-          .max(20)
-          .optional()
-          .describe("Количество результатов (по умолчанию 5, максимум 20)"),
-      },
-    },
-    async (args) => {
-      try {
-        if (!isTableReady()) {
-          return {
-            content: [{ type: "text" as const, text: "Индекс пуст. Добавьте документы и выполните индексацию." }],
-          };
-        }
-
-        const results = await search(args.query, args.limit ?? 5);
-
-        if (results.length === 0) {
-          return {
-            content: [{ type: "text" as const, text: "Ничего не найдено по запросу." }],
-          };
-        }
-
-        const formattedResults = results
-          .map((r, i) => {
-            return `[${i + 1}] Источник: ${r.source}\nРелевантность: ${(1 - r.score).toFixed(3)}\n\n${r.text}`;
-          })
-          .join("\n\n---\n\n");
-
-        return {
-          content: [{ type: "text" as const, text: `Найдено ${results.length} результатов:\n\n${formattedResults}` }],
-        };
-      } catch (error) {
-        return {
-          content: [
-            { type: "text" as const, text: `Ошибка поиска: ${error instanceof Error ? error.message : "Unknown error"}` },
-          ],
-        };
-      }
-    }
-  );
+  // NOTE: searchDocuments removed - RAG search is now automatic (attached to every message)
+  // The bot doesn't need to call search manually anymore
 
   // Get index stats
   server.registerTool(

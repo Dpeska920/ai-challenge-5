@@ -104,16 +104,23 @@ export class SendAIMessageUseCase {
       contextParts.push(`Местоположение пользователя: ${location}`);
     }
 
-    // Search RAG for relevant context (threshold 0.8 means distance < 0.8 is relevant)
+    // Search RAG for relevant context
     let ragContext: string | null = null;
     if (this.ragService) {
       try {
-        const ragResults = await this.ragService.searchContext(message, 3, 0.8);
+        const ragThreshold = config.ragThreshold;
+        const ragResults = await this.ragService.searchContext(message, 3, ragThreshold);
         ragContext = this.ragService.formatContextForPrompt(ragResults);
         if (ragContext) {
-          log('debug', 'RAG context found', {
+          log('info', 'RAG context attached to message', {
             telegramId,
             resultsCount: ragResults.length,
+            threshold: ragThreshold,
+          });
+        } else {
+          log('info', 'RAG search returned no relevant results', {
+            telegramId,
+            threshold: ragThreshold,
           });
         }
       } catch (error) {
