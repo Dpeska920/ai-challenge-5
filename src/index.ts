@@ -33,6 +33,7 @@ import { RagListCommand } from './application/commands/RagListCommand';
 import { RagAddCommand } from './application/commands/RagAddCommand';
 import { RagDelCommand } from './application/commands/RagDelCommand';
 import { RagIndexCommand } from './application/commands/RagIndexCommand';
+import { RagRerankCommand } from './application/commands/RagRerankCommand';
 import { RagService } from './domain/services/RagService';
 import { log } from './utils/logger';
 
@@ -152,6 +153,7 @@ async function main(): Promise<void> {
     commandRegistry.register(new RagAddCommand(ragService));
     commandRegistry.register(new RagDelCommand(ragService));
     commandRegistry.register(new RagIndexCommand(ragService));
+    commandRegistry.register(new RagRerankCommand(userRepository));
   }
 
   // Initialize message handler

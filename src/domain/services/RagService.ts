@@ -12,7 +12,23 @@ export interface RagSearchResult {
   source: string;
   description: string;
   relevance: string;
+  rerankScore?: string;
+  llmRelevance?: number;
 }
+
+export interface RagTokensUsed {
+  input: number;
+  output: number;
+  total: number;
+}
+
+export interface RagSearchResponse {
+  results: RagSearchResult[];
+  tokensUsed?: RagTokensUsed;
+  expandedQueries?: string[];
+}
+
+export type RerankMode = 'off' | 'cross' | 'llm';
 
 export interface RagServiceConfig {
   apiUrl: string;
@@ -124,30 +140,36 @@ export class RagService {
 
   // Search for relevant context based on user query
   // Returns empty array if nothing relevant found (below threshold)
+  // rerankMode: 'off' | 'score' | 'cross' | 'llm'
   async searchContext(
     query: string,
     limit: number = 3,
-    threshold: number = 0.8
-  ): Promise<RagSearchResult[]> {
+    threshold: number = 0.8,
+    rerankMode: RerankMode = 'off'
+  ): Promise<RagSearchResponse> {
     try {
       const response = await fetch(`${this.apiUrl}/api/search`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ query, limit, threshold }),
+        body: JSON.stringify({ query, limit, threshold, rerankMode }),
       });
 
       const data = await response.json();
 
       if (!data.success) {
-        return [];
+        return { results: [] };
       }
 
-      return data.results || [];
+      return {
+        results: data.results || [],
+        tokensUsed: data.tokensUsed,
+        expandedQueries: data.expandedQueries,
+      };
     } catch (error) {
       // Silently fail - don't break the chat if RAG is unavailable
-      return [];
+      return { results: [] };
     }
   }
 

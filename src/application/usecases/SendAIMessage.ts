@@ -3,7 +3,7 @@ import type { Conversation } from '../../domain/entities/Conversation';
 import type { ConversationRepository } from '../../domain/repositories/ConversationRepository';
 import type { AIProvider, ChatOptions, ResponseFormat, AIResponseMetadata, AITool } from '../../domain/services/AIProvider';
 import { LimitService } from '../../domain/services/LimitService';
-import type { RagService } from '../../domain/services/RagService';
+import type { RagService, RerankMode } from '../../domain/services/RagService';
 import {
   createNewConversation,
   addMessage,
@@ -106,21 +106,57 @@ export class SendAIMessageUseCase {
 
     // Search RAG for relevant context
     let ragContext: string | null = null;
+    let ragDebugInfo: string | null = null;
+    const rerankMode = (userSettings?.rerankMode ?? 'off') as RerankMode;
+
     if (this.ragService) {
       try {
         const ragThreshold = config.ragThreshold;
-        const ragResults = await this.ragService.searchContext(message, 3, ragThreshold);
+        const ragResponse = await this.ragService.searchContext(message, 3, ragThreshold, rerankMode);
+        const ragResults = ragResponse.results;
+        const tokensUsed = ragResponse.tokensUsed;
+        const expandedQueries = ragResponse.expandedQueries;
+
         ragContext = this.ragService.formatContextForPrompt(ragResults);
+
+        // Build debug info if enabled
+        if (config.debugRag && ragResults.length > 0) {
+          const debugLines = ragResults.map((r, i) => {
+            const preview = r.text.slice(0, 80).replace(/\n/g, ' ') + '...';
+            const scores = [
+              `rel=${r.relevance}`,
+              r.rerankScore ? `rerank=${r.rerankScore}` : null,
+              r.llmRelevance !== undefined ? `llm=${r.llmRelevance}` : null,
+            ].filter(Boolean).join(', ');
+            return `[${i + 1}] ${scores}\n${preview}`;
+          });
+
+          // Add expanded queries info for LLM mode
+          const queriesInfo = expandedQueries && expandedQueries.length > 0
+            ? `\n🔍 Queries: ${expandedQueries.join(' | ')}`
+            : '';
+
+          // Add tokens info for LLM mode
+          const tokensInfo = tokensUsed
+            ? `\n🔤 Tokens: ${tokensUsed.input}→${tokensUsed.output} (${tokensUsed.total} total)`
+            : '';
+
+          ragDebugInfo = `\n\n📊 RAG Debug (mode: ${rerankMode}):${queriesInfo}${tokensInfo}\n${debugLines.join('\n')}`;
+        }
+
         if (ragContext) {
           log('info', 'RAG context attached to message', {
             telegramId,
             resultsCount: ragResults.length,
             threshold: ragThreshold,
+            rerankMode,
+            tokensUsed: tokensUsed?.total,
           });
         } else {
           log('info', 'RAG search returned no relevant results', {
             telegramId,
             threshold: ragThreshold,
+            rerankMode,
           });
         }
       } catch (error) {
@@ -190,12 +226,17 @@ export class SendAIMessageUseCase {
     const lastMessageTokens = estimateTokens(message);
 
     // Format response with stats
-    const responseWithStats = this.formatResponseWithStats(
+    let responseWithStats = this.formatResponseWithStats(
       aiResponse.content,
       aiResponse.metadata,
       lastMessageTokens,
       conversation.tokens
     );
+
+    // Add RAG debug info if enabled
+    if (ragDebugInfo) {
+      responseWithStats += ragDebugInfo;
+    }
 
     // Convert markdown to Telegram HTML
     const htmlResponse = markdownToTelegramHtml(responseWithStats);

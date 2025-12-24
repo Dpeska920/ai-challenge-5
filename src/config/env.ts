@@ -94,8 +94,11 @@ export const config = {
   ragApiUrl: process.env.RAG_API_URL || null,
 
   // RAG threshold for semantic search (lower = stricter, higher = more results)
-  // For all-MiniLM-L6-v2: 0.5-0.8 = very relevant, 0.8-1.2 = relevant, 1.2-1.5 = somewhat relevant
-  ragThreshold: getEnvAsNumber('RAG_THRESHOLD', 1.2),
+  // For all-MiniLM-L6-v2: typical L2 distances are 1.0-2.0 for relevant content
+  ragThreshold: getEnvAsNumber('RAG_THRESHOLD', 2.0),
+
+  // Debug mode for RAG - shows search results after bot response
+  debugRag: process.env.DEBUG_RAG === 'true',
 };
 
 function parseMcpServers(value: string | undefined): { name: string; url: string }[] {

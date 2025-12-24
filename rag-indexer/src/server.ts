@@ -5,7 +5,7 @@ import { randomUUID } from "crypto";
 import { z } from "zod";
 
 import { initEmbeddings } from "./embeddings";
-import { initVectorStore, openTable, searchWithThreshold, getStats, reindexWithRecords, isTableReady } from "./vectorStore";
+import { initVectorStore, openTable, search, searchWithThreshold, getStats, reindexWithRecords, isTableReady } from "./vectorStore";
 import {
   initDocumentManager,
   listDocuments,
@@ -14,12 +14,16 @@ import {
   indexAllDocuments,
   type DocumentInfo,
 } from "./documentManager";
+import { initCrossEncoder, rerank, isCrossEncoderReady, expandQuery, type RerankMode } from "./reranker";
 
 const DATA_PATH = process.env.DATA_PATH || "./data/lancedb";
 const DOCS_PATH = process.env.DOCS_PATH || "./docs";
 const MODEL_NAME = process.env.MODEL_NAME || "Xenova/all-MiniLM-L6-v2";
+// Cross-encoder model (disabled by default - use embedding similarity instead)
+const CROSS_ENCODER_MODEL = process.env.CROSS_ENCODER_MODEL || "";
 const CHUNK_SIZE = parseInt(process.env.CHUNK_SIZE || "500");
 const CHUNK_OVERLAP = parseInt(process.env.CHUNK_OVERLAP || "50");
+const ENABLE_CROSS_ENCODER = process.env.ENABLE_CROSS_ENCODER !== "false"; // Enabled by default
 
 let isIndexing = false;
 
@@ -196,7 +200,12 @@ app.use(express.raw({ type: "application/octet-stream", limit: "50mb" }));
 
 // Health check endpoint
 app.get("/health", (_req: Request, res: Response) => {
-  res.json({ status: "ok", sessions: sessions.size, indexing: isIndexing });
+  res.json({
+    status: "ok",
+    sessions: sessions.size,
+    indexing: isIndexing,
+    crossEncoderReady: isCrossEncoderReady(),
+  });
 });
 
 // REST API for document management
@@ -275,11 +284,12 @@ app.post("/api/reindex", async (_req: Request, res: Response) => {
   }
 });
 
-// Auto-search with threshold (for automatic RAG integration)
+// Auto-search with threshold and optional reranking
 // Returns empty array if nothing relevant found
+// rerankMode: 'off' | 'cross' | 'llm'
 app.post("/api/search", async (req: Request, res: Response) => {
   try {
-    const { query, limit = 3, threshold = 0.8 } = req.body;
+    const { query, limit = 3, threshold = 0.8, rerankMode = "off" } = req.body;
 
     if (!query) {
       res.status(400).json({ success: false, error: "query is required" });
@@ -287,19 +297,73 @@ app.post("/api/search", async (req: Request, res: Response) => {
     }
 
     if (!isTableReady()) {
-      res.json({ success: true, results: [], message: "Index is empty" });
+      res.json({ success: true, results: [], message: "Index is empty", rerankMode });
       return;
     }
 
-    const results = await searchWithThreshold(query, limit, threshold);
+    let totalTokensUsed = { input: 0, output: 0, total: 0 };
+    let rawResults: Awaited<ReturnType<typeof searchWithThreshold>> = [];
+    let expandedQueries: string[] = [];
+
+    // For LLM mode: use query expansion + multi-search
+    if (rerankMode === "llm") {
+      // Step 1: Expand query into multiple search queries
+      const expansion = await expandQuery(query);
+      expandedQueries = expansion.queries;
+
+      if (expansion.tokensUsed) {
+        totalTokensUsed.input += expansion.tokensUsed.input;
+        totalTokensUsed.output += expansion.tokensUsed.output;
+        totalTokensUsed.total += expansion.tokensUsed.total;
+      }
+
+      // Step 2: Search with all expanded queries in parallel
+      const fetchLimit = Math.max(limit * 2, 6); // Get more results per query
+      const searchPromises = expandedQueries.map(q => searchWithThreshold(q, fetchLimit, threshold));
+      const searchResultsArrays = await Promise.all(searchPromises);
+
+      // Step 3: Merge and deduplicate results (by text content)
+      const seen = new Set<string>();
+      for (const results of searchResultsArrays) {
+        for (const result of results) {
+          const key = result.text.slice(0, 200); // Use first 200 chars as key
+          if (!seen.has(key)) {
+            seen.add(key);
+            rawResults.push(result);
+          }
+        }
+      }
+
+      console.log(`[Search] LLM mode: ${expandedQueries.length} queries -> ${rawResults.length} unique results`);
+    } else {
+      // Standard search for other modes
+      const fetchLimit = rerankMode === "off" ? limit : Math.max(limit * 3, 10);
+      rawResults = await searchWithThreshold(query, fetchLimit, threshold);
+    }
+
+    // Apply reranking if requested
+    const reranked = await rerank(query, rawResults, rerankMode as RerankMode, limit);
+
+    // Add rerank tokens to total
+    if (reranked.tokensUsed) {
+      totalTokensUsed.input += reranked.tokensUsed.input;
+      totalTokensUsed.output += reranked.tokensUsed.output;
+      totalTokensUsed.total += reranked.tokensUsed.total;
+    }
 
     res.json({
       success: true,
-      results: results.map((r) => ({
+      rerankMode,
+      crossEncoderReady: isCrossEncoderReady(),
+      expandedQueries: rerankMode === "llm" ? expandedQueries : undefined,
+      tokensUsed: totalTokensUsed.total > 0 ? totalTokensUsed : undefined,
+      results: reranked.results.map((r) => ({
         text: r.text,
         source: r.source,
         description: r.description,
-        relevance: (1 - r.score).toFixed(3),
+        relevance: (1 - r.originalScore).toFixed(3),
+        rerankScore: r.rerankScore?.toFixed(3),
+        llmRelevance: r.llmRelevance,
       })),
     });
   } catch (error) {
@@ -379,6 +443,18 @@ async function start() {
   // Initialize embedding model
   console.log("[RAG] Loading embedding model...");
   await initEmbeddings(MODEL_NAME);
+
+  // Initialize cross-encoder for reranking (optional but recommended)
+  if (ENABLE_CROSS_ENCODER) {
+    console.log("[RAG] Loading cross-encoder model...");
+    try {
+      await initCrossEncoder(CROSS_ENCODER_MODEL);
+    } catch (error) {
+      console.warn("[RAG] Failed to load cross-encoder, reranking will use fallback:", error);
+    }
+  } else {
+    console.log("[RAG] Cross-encoder disabled (ENABLE_CROSS_ENCODER=false)");
+  }
 
   // Initialize vector store
   console.log("[RAG] Connecting to LanceDB...");

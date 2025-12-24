@@ -16,12 +16,15 @@ export interface UserUsage {
 
 export type ChatResponseFormat = 'text' | 'json_object';
 
+export type RerankMode = 'off' | 'cross' | 'llm';
+
 export interface UserChatSettings {
   temperature: number | null;      // null = use default from config
   systemPrompt: string | null;     // null = use default from config
   maxTokens: number | null;        // null = use default from config
   responseFormat: ChatResponseFormat | null;  // null = use default from config
   model: string | null;            // null = use default provider, otherwise use OpenRouter with this model
+  rerankMode: RerankMode | null;   // null = 'off', RAG reranking mode
 }
 
 export interface UserProfile {
@@ -68,6 +71,7 @@ export function createNewUser(telegramId: number, username?: string, firstName?:
       maxTokens: null,
       responseFormat: null,
       model: null,
+      rerankMode: null,
     },
     profile: {
       location: null,
@@ -168,6 +172,7 @@ export function getDefaultChatSettings(): UserChatSettings {
     maxTokens: null,
     responseFormat: null,
     model: null,
+    rerankMode: null,
   };
 }
 
