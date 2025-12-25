@@ -2,7 +2,7 @@ import { readdir, unlink, stat } from "node:fs/promises";
 import { join, extname, basename } from "node:path";
 import pdf from "pdf-parse";
 import type { DocumentChunk, DocRecord } from "./types";
-import { RecursiveCharacterTextSplitter } from "./textSplitter";
+import { splitDocuments } from "./textSplitter";
 import { generateEmbeddings } from "./embeddings";
 
 const SUPPORTED_EXTENSIONS = [".pdf", ".txt", ".md"];
@@ -172,12 +172,8 @@ export async function indexAllDocuments(): Promise<DocRecord[]> {
     return [];
   }
 
-  const splitter = new RecursiveCharacterTextSplitter({
-    chunkSize: config.chunkSize,
-    chunkOverlap: config.chunkOverlap,
-  });
-
-  const allChunks: DocumentChunk[] = [];
+  // Load all document contents
+  const loadedDocs: { content: string; source: string; description: string }[] = [];
 
   for (const doc of documents) {
     try {
@@ -185,23 +181,35 @@ export async function indexAllDocuments(): Promise<DocRecord[]> {
       const content = await loadDocumentContent(doc.path);
 
       if (content.trim()) {
-        const textChunks = splitter.split(content);
-
-        for (let i = 0; i < textChunks.length; i++) {
-          allChunks.push({
-            text: textChunks[i],
-            source: doc.name,
-            description: doc.description,
-            chunkIndex: i,
-          });
-        }
+        loadedDocs.push({
+          content,
+          source: doc.name,
+          description: doc.description,
+        });
       }
     } catch (error) {
       console.error(`[DocManager] Error processing ${doc.name}:`, error);
     }
   }
 
-  console.log(`[DocManager] Split ${documents.length} documents into ${allChunks.length} chunks`);
+  if (loadedDocs.length === 0) {
+    console.log("[DocManager] No documents with content to index");
+    return [];
+  }
+
+  // Split documents into chunks with line tracking
+  const allChunks = splitDocuments(
+    loadedDocs.map((d) => ({ content: d.content, source: d.source })),
+    { chunkSize: config.chunkSize, chunkOverlap: config.chunkOverlap }
+  );
+
+  // Attach descriptions to chunks
+  const descriptionMap = new Map(loadedDocs.map((d) => [d.source, d.description]));
+  for (const chunk of allChunks) {
+    chunk.description = descriptionMap.get(chunk.source) || "";
+  }
+
+  console.log(`[DocManager] Split ${loadedDocs.length} documents into ${allChunks.length} chunks`);
 
   if (allChunks.length === 0) {
     return [];
@@ -222,8 +230,10 @@ export async function indexAllDocuments(): Promise<DocRecord[]> {
     vector: embeddings[i],
     text: chunk.text,
     source: chunk.source,
-    description: chunk.description,
+    description: chunk.description || '',
     chunkIndex: chunk.chunkIndex,
+    startLine: chunk.startLine,
+    endLine: chunk.endLine,
     createdAt: new Date().toISOString(),
   }));
 

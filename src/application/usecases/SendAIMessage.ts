@@ -106,7 +106,7 @@ export class SendAIMessageUseCase {
 
     // Search RAG for relevant context
     let ragContext: string | null = null;
-    let ragDebugInfo: string | null = null;
+    let ragSourcesBlock: string | null = null;
     const rerankMode = (userSettings?.rerankMode ?? 'off') as RerankMode;
 
     if (this.ragService) {
@@ -115,34 +115,9 @@ export class SendAIMessageUseCase {
         const ragResponse = await this.ragService.searchContext(message, 3, ragThreshold, rerankMode);
         const ragResults = ragResponse.results;
         const tokensUsed = ragResponse.tokensUsed;
-        const expandedQueries = ragResponse.expandedQueries;
 
         ragContext = this.ragService.formatContextForPrompt(ragResults);
-
-        // Build debug info if enabled
-        if (config.debugRag && ragResults.length > 0) {
-          const debugLines = ragResults.map((r, i) => {
-            const preview = r.text.slice(0, 80).replace(/\n/g, ' ') + '...';
-            const scores = [
-              `rel=${r.relevance}`,
-              r.rerankScore ? `rerank=${r.rerankScore}` : null,
-              r.llmRelevance !== undefined ? `llm=${r.llmRelevance}` : null,
-            ].filter(Boolean).join(', ');
-            return `[${i + 1}] ${scores}\n${preview}`;
-          });
-
-          // Add expanded queries info for LLM mode
-          const queriesInfo = expandedQueries && expandedQueries.length > 0
-            ? `\n🔍 Queries: ${expandedQueries.join(' | ')}`
-            : '';
-
-          // Add tokens info for LLM mode
-          const tokensInfo = tokensUsed
-            ? `\n🔤 Tokens: ${tokensUsed.input}→${tokensUsed.output} (${tokensUsed.total} total)`
-            : '';
-
-          ragDebugInfo = `\n\n📊 RAG Debug (mode: ${rerankMode}):${queriesInfo}${tokensInfo}\n${debugLines.join('\n')}`;
-        }
+        ragSourcesBlock = this.ragService.formatSourcesBlock(ragResults);
 
         if (ragContext) {
           log('info', 'RAG context attached to message', {
@@ -233,9 +208,9 @@ export class SendAIMessageUseCase {
       conversation.tokens
     );
 
-    // Add RAG debug info if enabled
-    if (ragDebugInfo) {
-      responseWithStats += ragDebugInfo;
+    // Add sources block if RAG was used
+    if (ragSourcesBlock) {
+      responseWithStats += '\n\n' + ragSourcesBlock;
     }
 
     // Convert markdown to Telegram HTML

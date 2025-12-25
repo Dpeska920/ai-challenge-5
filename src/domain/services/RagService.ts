@@ -14,6 +14,8 @@ export interface RagSearchResult {
   relevance: string;
   rerankScore?: string;
   llmRelevance?: number;
+  startLine: number;
+  endLine: number;
 }
 
 export interface RagTokensUsed {
@@ -180,13 +182,36 @@ export class RagService {
     }
 
     const contextParts = results.map((r, i) => {
+      const lineInfo = r.startLine === r.endLine
+        ? `строка ${r.startLine}`
+        : `строки ${r.startLine}-${r.endLine}`;
       const header = r.description
-        ? `[${i + 1}] ${r.source} (${r.description})`
-        : `[${i + 1}] ${r.source}`;
+        ? `[${i + 1}] ${r.source} (${r.description}, ${lineInfo})`
+        : `[${i + 1}] ${r.source} (${lineInfo})`;
       return `${header}\n${r.text}`;
     });
 
-    return `Relevant context from documents:\n\n${contextParts.join('\n\n---\n\n')}`;
+    const instruction = `ВАЖНО: Если ты используешь информацию из документов ниже, обязательно указывай номер источника в квадратных скобках, например [1] или [2]. Это поможет пользователю найти первоисточник.`;
+
+    return `${instruction}\n\nКонтекст из документов:\n\n${contextParts.join('\n\n---\n\n')}`;
+  }
+
+  // Format sources block for user display (shown at the end of response)
+  formatSourcesBlock(results: RagSearchResult[]): string | null {
+    if (results.length === 0) {
+      return null;
+    }
+
+    const sources = results.map((r, i) => {
+      const lineInfo = r.startLine === r.endLine
+        ? `строка ${r.startLine}`
+        : `строки ${r.startLine}-${r.endLine}`;
+      // Short quote from the beginning of the text
+      const quote = r.text.slice(0, 60).replace(/\n/g, ' ').trim() + '...';
+      return `[${i + 1}] ${r.source} (${lineInfo}): "${quote}"`;
+    });
+
+    return `📚 Источники:\n${sources.join('\n')}`;
   }
 
   formatSize(bytes: number): string {

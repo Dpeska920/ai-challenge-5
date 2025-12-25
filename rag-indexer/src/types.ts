@@ -5,6 +5,8 @@ export interface DocRecord {
   source: string;
   description: string;
   chunkIndex: number;
+  startLine: number;
+  endLine: number;
   createdAt: string;
   [key: string]: unknown;
 }
@@ -12,8 +14,10 @@ export interface DocRecord {
 export interface DocumentChunk {
   text: string;
   source: string;
-  description: string;
+  description?: string;
   chunkIndex: number;
+  startLine: number;
+  endLine: number;
 }
 
 export interface SearchResult {
@@ -21,6 +25,8 @@ export interface SearchResult {
   source: string;
   description: string;
   score: number;
+  startLine: number;
+  endLine: number;
 }
 
 export interface IndexerConfig {

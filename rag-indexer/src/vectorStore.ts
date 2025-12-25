@@ -63,6 +63,8 @@ export async function search(query: string, limit: number = 5): Promise<SearchRe
     source: row.source as string,
     description: (row.description as string) || "",
     score: row._distance as number,
+    startLine: (row.startLine as number) || 1,
+    endLine: (row.endLine as number) || 1,
   }));
 }
 

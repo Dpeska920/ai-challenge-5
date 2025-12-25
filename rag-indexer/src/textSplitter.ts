@@ -111,6 +111,24 @@ export class RecursiveCharacterTextSplitter {
   }
 }
 
+// Count lines up to a position in text
+function countLinesUpTo(text: string, position: number): number {
+  let count = 1; // Lines are 1-indexed
+  for (let i = 0; i < position && i < text.length; i++) {
+    if (text[i] === '\n') count++;
+  }
+  return count;
+}
+
+// Count lines in a string
+function countLines(text: string): number {
+  let count = 1;
+  for (const char of text) {
+    if (char === '\n') count++;
+  }
+  return count;
+}
+
 export function splitDocuments(
   documents: { content: string; source: string }[],
   config: SplitterConfig
@@ -120,12 +138,30 @@ export function splitDocuments(
 
   for (const doc of documents) {
     const textChunks = splitter.split(doc.content);
+    let searchStart = 0;
 
     for (let i = 0; i < textChunks.length; i++) {
+      const chunkText = textChunks[i];
+
+      // Find chunk position in original text (starting from last found position)
+      const position = doc.content.indexOf(chunkText, searchStart);
+
+      let startLine = 1;
+      let endLine = 1;
+
+      if (position !== -1) {
+        startLine = countLinesUpTo(doc.content, position);
+        endLine = startLine + countLines(chunkText) - 1;
+        // Move search start forward (but account for overlap)
+        searchStart = position + 1;
+      }
+
       chunks.push({
-        text: textChunks[i],
+        text: chunkText,
         source: doc.source,
         chunkIndex: i,
+        startLine,
+        endLine,
       });
     }
   }

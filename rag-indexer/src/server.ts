@@ -364,6 +364,8 @@ app.post("/api/search", async (req: Request, res: Response) => {
         relevance: (1 - r.originalScore).toFixed(3),
         rerankScore: r.rerankScore?.toFixed(3),
         llmRelevance: r.llmRelevance,
+        startLine: r.startLine,
+        endLine: r.endLine,
       })),
     });
   } catch (error) {
