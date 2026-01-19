@@ -171,8 +171,9 @@ export class SendAIMessageUseCase {
 
     let aiResponse: { content: string; metadata: AIResponseMetadata };
 
-    // Check if we should use MCP tools
-    if (this.mcpClient && provider.chatWithTools) {
+    // Check if we should use MCP tools (can be disabled via DISABLE_TOOLS env)
+    const toolsEnabled = !config.disableTools;
+    if (toolsEnabled && this.mcpClient && provider.chatWithTools) {
       aiResponse = await this.executeWithMcpTools(conversation, chatOptions, provider);
     } else {
       aiResponse = await provider.chatWithOptions(conversation.messages, chatOptions);

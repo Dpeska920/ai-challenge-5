@@ -54,7 +54,7 @@ export const config = {
   // AI Provider (default)
   aiProvider: getEnvOrDefault('AI_PROVIDER', 'openai'),
   openai: {
-    apiKey: getEnvOrThrow('OPENAI_API_KEY'),
+    apiKey: getEnvOrDefault('OPENAI_API_KEY', 'not-needed'),
     baseUrl: getEnvOrDefault('OPENAI_BASE_URL', 'https://api.openai.com/v1'),
     model: getEnvOrDefault('OPENAI_MODEL', 'gpt-4o-mini'),
     temperature: getEnvAsNumber('OPENAI_TEMPERATURE', 0.7),
@@ -99,6 +99,9 @@ export const config = {
 
   // Debug mode for RAG - shows search results after bot response
   debugRag: process.env.DEBUG_RAG === 'true',
+
+  // Disable AI tools/function calling (for models without tools support)
+  disableTools: process.env.DISABLE_TOOLS === 'true',
 };
 
 function parseMcpServers(value: string | undefined): { name: string; url: string }[] {

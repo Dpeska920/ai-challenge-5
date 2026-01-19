@@ -236,6 +236,12 @@ export class OpenAIProvider implements AIProvider {
     const endTime = performance.now();
     const responseTimeMs = endTime - startTime;
 
+    log('debug', 'Raw AI response', { response: JSON.stringify(response).slice(0, 1000) });
+
+    if (!response.choices || response.choices.length === 0) {
+      throw new Error(`Invalid AI response: no choices. Raw: ${JSON.stringify(response).slice(0, 500)}`);
+    }
+
     const message = response.choices[0]?.message;
 
     // Check for tool calls

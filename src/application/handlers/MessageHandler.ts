@@ -146,10 +146,19 @@ export class MessageHandler {
 
         await sendMessage(result.response, result.parseMode ? { parseMode: result.parseMode } : undefined);
       } catch (error) {
-        log('error', 'Error processing AI message', {
+        const errorDetails: Record<string, unknown> = {
           telegramId,
           error: error instanceof Error ? error.message : String(error),
-        });
+        };
+
+        if (error instanceof Error) {
+          errorDetails.stack = error.stack;
+          if ('cause' in error) errorDetails.cause = String(error.cause);
+          if ('status' in error) errorDetails.status = (error as { status?: number }).status;
+          if ('code' in error) errorDetails.code = (error as { code?: string }).code;
+        }
+
+        log('error', 'Error processing AI message', errorDetails);
         await sendMessage('Sorry, an error occurred while processing your message. Please try again later.');
       }
     }
