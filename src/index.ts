@@ -29,6 +29,7 @@ import { CompactCommand } from './application/commands/CompactCommand';
 import { ToolsCommand } from './application/commands/ToolsCommand';
 import { SetLocationCommand } from './application/commands/SetLocationCommand';
 import { SetTimezoneCommand } from './application/commands/SetTimezoneCommand';
+import { PersonalizationCommand } from './application/commands/PersonalizationCommand';
 import { RagListCommand } from './application/commands/RagListCommand';
 import { RagAddCommand } from './application/commands/RagAddCommand';
 import { RagDelCommand } from './application/commands/RagDelCommand';
@@ -146,6 +147,7 @@ async function main(): Promise<void> {
   commandRegistry.register(new ToolsCommand(mcpClient));
   commandRegistry.register(new SetLocationCommand(userRepository));
   commandRegistry.register(new SetTimezoneCommand(userRepository));
+  commandRegistry.register(new PersonalizationCommand(userRepository));
 
   // Register RAG commands if service is available
   if (ragService) {

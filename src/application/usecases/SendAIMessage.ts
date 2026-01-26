@@ -103,6 +103,10 @@ export class SendAIMessageUseCase {
     if (location) {
       contextParts.push(`Местоположение пользователя: ${location}`);
     }
+    const personalization = userProfile?.personalization ?? null;
+    if (personalization) {
+      contextParts.push(`О пользователе: ${personalization}`);
+    }
 
     // Search RAG for relevant context
     let ragContext: string | null = null;

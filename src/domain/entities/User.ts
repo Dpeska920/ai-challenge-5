@@ -30,6 +30,7 @@ export interface UserChatSettings {
 export interface UserProfile {
   location: string | null;         // User's location (city, region, etc)
   timezone: string | null;         // User's timezone (e.g., Europe/Moscow)
+  personalization: string | null;  // User's personal info (profession, preferences, etc)
 }
 
 export interface User {
@@ -76,6 +77,7 @@ export function createNewUser(telegramId: number, username?: string, firstName?:
     profile: {
       location: null,
       timezone: null,
+      personalization: null,
     },
     createdAt: now,
     updatedAt: now,
@@ -192,6 +194,7 @@ export function getDefaultProfile(): UserProfile {
   return {
     location: null,
     timezone: null,
+    personalization: null,
   };
 }
 
