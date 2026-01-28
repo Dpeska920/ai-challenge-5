@@ -40,6 +40,10 @@ tmp/
 temp/
 *.tmp
 
+# ML Models (large binary files)
+stt-models/
+*.onnx
+
 # Docker compose (local)
 docker-compose.yml
 docker-compose.*.yml

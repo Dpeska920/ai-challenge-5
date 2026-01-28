@@ -5,6 +5,7 @@ import { MongoConversationRepository } from './infrastructure/repositories/Mongo
 import { MongoCommandHistoryRepository } from './infrastructure/repositories/MongoCommandHistoryRepository';
 import { OpenAIProvider } from './infrastructure/ai/OpenAIProvider';
 import { MCPClient } from './infrastructure/mcp/MCPClient';
+import { MLServiceClient } from './infrastructure/external/MLServiceClient';
 import { LimitService } from './domain/services/LimitService';
 import { CommandHistoryService } from './domain/services/CommandHistoryService';
 import { GameCreationService } from './domain/services/GameCreationService';
@@ -35,6 +36,9 @@ import { RagAddCommand } from './application/commands/RagAddCommand';
 import { RagDelCommand } from './application/commands/RagDelCommand';
 import { RagIndexCommand } from './application/commands/RagIndexCommand';
 import { RagRerankCommand } from './application/commands/RagRerankCommand';
+import { GithubCommand } from './application/commands/GithubCommand';
+import { IssuesCommand } from './application/commands/IssuesCommand';
+import { ReviewCommand } from './application/commands/ReviewCommand';
 import { RagService } from './domain/services/RagService';
 import { log } from './utils/logger';
 
@@ -109,6 +113,23 @@ async function main(): Promise<void> {
     log('info', 'RAG service not configured (RAG_API_URL not set)');
   }
 
+  // Initialize ML Service client (optional) - for voice transcription
+  const mlServiceClient = config.mlServiceUrl
+    ? new MLServiceClient(config.mlServiceUrl)
+    : null;
+
+  if (mlServiceClient) {
+    log('info', 'ML Service client initialized', { url: config.mlServiceUrl });
+    const isHealthy = await mlServiceClient.healthCheck();
+    if (isHealthy) {
+      log('info', 'ML Service is healthy');
+    } else {
+      log('warn', 'ML Service health check failed - voice transcription may not be available');
+    }
+  } else {
+    log('info', 'ML Service not configured (ML_SERVICE_URL not set)');
+  }
+
   // Initialize services
   const limitService = new LimitService(userRepository);
   const commandHistoryService = new CommandHistoryService(commandHistoryRepository);
@@ -148,6 +169,9 @@ async function main(): Promise<void> {
   commandRegistry.register(new SetLocationCommand(userRepository));
   commandRegistry.register(new SetTimezoneCommand(userRepository));
   commandRegistry.register(new PersonalizationCommand(userRepository));
+  commandRegistry.register(new GithubCommand(userRepository));
+  commandRegistry.register(new IssuesCommand());
+  commandRegistry.register(new ReviewCommand());
 
   // Register RAG commands if service is available
   if (ragService) {
@@ -167,7 +191,8 @@ async function main(): Promise<void> {
     sendAIMessageUseCase,
     limitService,
     gameCreationService,
-    conversationRepository
+    conversationRepository,
+    mlServiceClient
   );
 
   // Initialize and start bot

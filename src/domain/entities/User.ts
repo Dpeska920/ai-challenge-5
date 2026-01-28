@@ -25,6 +25,7 @@ export interface UserChatSettings {
   responseFormat: ChatResponseFormat | null;  // null = use default from config
   model: string | null;            // null = use default provider, otherwise use OpenRouter with this model
   rerankMode: RerankMode | null;   // null = 'off', RAG reranking mode
+  githubRepo: string | null;       // null = no repo selected, format: "owner/repo"
 }
 
 export interface UserProfile {
@@ -73,6 +74,7 @@ export function createNewUser(telegramId: number, username?: string, firstName?:
       responseFormat: null,
       model: null,
       rerankMode: null,
+      githubRepo: null,
     },
     profile: {
       location: null,
@@ -175,6 +177,7 @@ export function getDefaultChatSettings(): UserChatSettings {
     responseFormat: null,
     model: null,
     rerankMode: null,
+    githubRepo: null,
   };
 }
 

@@ -1,0 +1,20 @@
+# FastAPI and server
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+python-multipart==0.0.18
+
+# Sherpa-ONNX for ASR (lightweight, fast)
+sherpa-onnx>=1.10.45
+
+# Audio processing
+librosa==0.10.2
+soundfile==0.13.1
+numpy==1.26.4
+pydub==0.25.1
+
+# Configuration
+pydantic==2.10.4
+pydantic-settings==2.7.0
+
+# Utilities
+psutil==6.1.1

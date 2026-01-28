@@ -1,6 +1,7 @@
 import type { UserRepository } from '../../domain/repositories/UserRepository';
 import type { ConversationRepository } from '../../domain/repositories/ConversationRepository';
 import type { Config } from '../../config/env';
+import type { MLServiceClient } from '../../infrastructure/external/MLServiceClient';
 import { createNewUser } from '../../domain/entities/User';
 import { isConversationExpired, deactivateConversation } from '../../domain/entities/Conversation';
 import { ActivateUserUseCase } from '../usecases/ActivateUser';
@@ -23,6 +24,16 @@ export interface MessageContext {
   sendMessage: (text: string, options?: SendMessageOptions) => Promise<void>;
 }
 
+export interface VoiceMessageContext {
+  telegramId: number;
+  username?: string;
+  firstName?: string;
+  audioBuffer: Buffer;
+  filename: string;
+  duration: number;
+  sendMessage: (text: string, options?: SendMessageOptions) => Promise<void>;
+}
+
 export class MessageHandler {
   private activateUserUseCase: ActivateUserUseCase;
   private checkLimitsUseCase: CheckLimitsUseCase;
@@ -30,6 +41,7 @@ export class MessageHandler {
   private limitService: LimitService;
   private gameCreationService: GameCreationService;
   private conversationRepo: ConversationRepository;
+  private mlServiceClient: MLServiceClient | null;
 
   constructor(
     private userRepository: UserRepository,
@@ -39,7 +51,8 @@ export class MessageHandler {
     sendAIMessageUseCase: SendAIMessageUseCase,
     limitService: LimitService,
     gameCreationService: GameCreationService,
-    conversationRepo: ConversationRepository
+    conversationRepo: ConversationRepository,
+    mlServiceClient: MLServiceClient | null = null
   ) {
     this.activateUserUseCase = activateUserUseCase;
     this.checkLimitsUseCase = checkLimitsUseCase;
@@ -47,6 +60,7 @@ export class MessageHandler {
     this.limitService = limitService;
     this.gameCreationService = gameCreationService;
     this.conversationRepo = conversationRepo;
+    this.mlServiceClient = mlServiceClient;
   }
 
   async handle(ctx: MessageContext): Promise<void> {
@@ -161,6 +175,66 @@ export class MessageHandler {
         log('error', 'Error processing AI message', errorDetails);
         await sendMessage('Sorry, an error occurred while processing your message. Please try again later.');
       }
+    }
+  }
+
+  async handleVoiceMessage(ctx: VoiceMessageContext): Promise<void> {
+    const { telegramId, username, firstName, audioBuffer, filename, duration, sendMessage } = ctx;
+
+    log('info', 'Voice message received', { telegramId, filename, duration, size: audioBuffer.length });
+
+    // 1. Get or create user
+    let user = await this.userRepository.findByTelegramId(telegramId);
+
+    if (!user) {
+      const newUser = createNewUser(telegramId, username, firstName);
+      user = await this.userRepository.create(newUser);
+      log('info', 'New user created', { telegramId });
+    }
+
+    // 2. Check if user is activated
+    if (!user.isActivated) {
+      await sendMessage('Bot is not activated. Please enter the activation code.');
+      return;
+    }
+
+    // 3. Check if ML service is available
+    if (!this.mlServiceClient) {
+      await sendMessage('Voice input is temporarily unavailable.');
+      log('warn', 'Voice message received but ML service is not configured', { telegramId });
+      return;
+    }
+
+    try {
+      // 4. Transcribe audio
+      const result = await this.mlServiceClient.transcribe(audioBuffer, filename);
+
+      if (!result.text || result.text.trim() === '') {
+        await sendMessage('Could not recognize speech. Please try speaking more clearly.');
+        return;
+      }
+
+      log('info', 'Voice transcribed successfully', {
+        telegramId,
+        textLength: result.text.length,
+        language: result.language,
+        processingTime: result.processing_time_ms,
+      });
+
+      // 5. Process as regular text message
+      await this.handle({
+        telegramId,
+        username,
+        firstName,
+        text: result.text,
+        sendMessage,
+      });
+    } catch (error) {
+      log('error', 'Voice transcription error', {
+        telegramId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      await sendMessage('Error recognizing speech. Please try again later.');
     }
   }
 }

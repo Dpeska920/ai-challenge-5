@@ -1,10 +1,15 @@
 FROM oven/bun:1-alpine
 
-# Install Python for stdio MCP servers
-RUN apk add --no-cache python3 py3-pip
+# Install Python for stdio MCP servers (optional, may fail on network issues)
+# Using virtual environment per PEP 668
+RUN apk update && apk add --no-cache python3 && \
+    python3 -m venv /opt/venv && \
+    /opt/venv/bin/pip install --upgrade pip && \
+    /opt/venv/bin/pip install mcp-server-time || \
+    echo "Warning: Python/MCP server installation failed, stdio servers will not be available"
 
-# Install MCP servers
-RUN pip3 install --break-system-packages mcp-server-time
+# Add venv to PATH for MCP server execution (if available)
+ENV PATH="/opt/venv/bin:$PATH"
 
 WORKDIR /app
 

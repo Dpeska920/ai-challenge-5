@@ -108,6 +108,12 @@ export class SendAIMessageUseCase {
       contextParts.push(`О пользователе: ${personalization}`);
     }
 
+    // Add GitHub repos info if configured
+    if (config.github.repos.length > 0) {
+      const reposList = config.github.repos.map(repo => `  - ${repo}`).join('\n');
+      contextParts.push(`Доступные GitHub репозитории:\n${reposList}\nПри упоминании проекта по названию используй соответствующий репозиторий для GitHub инструментов.`);
+    }
+
     // Search RAG for relevant context
     let ragContext: string | null = null;
     let ragSourcesBlock: string | null = null;

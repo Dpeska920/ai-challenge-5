@@ -102,6 +102,15 @@ export const config = {
 
   // Disable AI tools/function calling (for models without tools support)
   disableTools: process.env.DISABLE_TOOLS === 'true',
+
+  // ML Service URL for voice transcription
+  mlServiceUrl: process.env.ML_SERVICE_URL || null,
+
+  // GitHub Integration
+  github: {
+    token: process.env.GITHUB_TOKEN || '',
+    repos: (process.env.GITHUB_REPOS || '').split(',').filter(Boolean),
+  },
 };
 
 function parseMcpServers(value: string | undefined): { name: string; url: string }[] {

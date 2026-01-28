@@ -76,6 +76,53 @@ export class TelegramBot {
       });
     });
 
+    // Handle voice messages
+    this.bot.on('message:voice', async (ctx: Context) => {
+      const message = ctx.message;
+      if (!message || !message.voice) return;
+
+      const telegramId = ctx.from?.id;
+      if (!telegramId) return;
+
+      const voice = message.voice;
+
+      try {
+        // Download voice file from Telegram
+        const file = await ctx.api.getFile(voice.file_id);
+        const fileUrl = `https://api.telegram.org/file/bot${this.bot.token}/${file.file_path}`;
+
+        const response = await fetch(fileUrl);
+        if (!response.ok) {
+          await ctx.reply('Failed to download voice message.');
+          return;
+        }
+
+        const audioBuffer = Buffer.from(await response.arrayBuffer());
+
+        // Pass to message handler
+        await this.messageHandler.handleVoiceMessage({
+          telegramId,
+          username: ctx.from?.username,
+          firstName: ctx.from?.first_name,
+          audioBuffer,
+          filename: 'voice.ogg',
+          duration: voice.duration,
+          sendMessage: async (text: string, options?: { parseMode?: 'HTML' | 'MarkdownV2' }) => {
+            const parts = splitMessage(text);
+            for (const part of parts) {
+              await ctx.reply(part, { parse_mode: options?.parseMode });
+            }
+          },
+        });
+      } catch (error) {
+        log('error', 'Error processing voice message', {
+          telegramId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        await ctx.reply('Error processing voice message. Please try again later.');
+      }
+    });
+
     // Handle document uploads for RAG
     this.bot.on('message:document', async (ctx: Context) => {
       const message = ctx.message;
